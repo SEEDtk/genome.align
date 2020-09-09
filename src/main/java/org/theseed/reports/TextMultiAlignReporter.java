@@ -22,7 +22,7 @@ public class TextMultiAlignReporter extends MultiAlignReporter {
     }
 
     @Override
-    public void openReport(Genome genome) {
+    public void openReport(Genome genome, String[] altBases) {
     }
 
     @Override

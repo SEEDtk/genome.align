@@ -43,6 +43,8 @@ import org.theseed.utils.BaseProcessor;
  *
  * --format		output report format
  * --workDir	working directory name; the default is "Temp" in the current directory
+ * --alt		ID of a genome other than the base that is to be used as an alternate base; a snip is only output if it does not
+ * 				match the base or any of the alternates
  *
  * @author Bruce Parrello
  *
@@ -64,6 +66,10 @@ public class GtoAlignProcessor extends BaseProcessor {
     /** output format */
     @Option(name = "--format", usage = "output format")
     private MultiAlignReporter.Type outputFormat;
+
+    /** alternate base genome IDs */
+    @Option(name = "--alt", metaVar = "83333.1", usage = "alternate base genome ID")
+    private String[] altBases;
 
     /** working directory */
     @Option(name = "--workDir", metaVar = "Temp", usage = "working directory for temporary files")
@@ -91,6 +97,7 @@ public class GtoAlignProcessor extends BaseProcessor {
         this.kmerSize = DnaKmers.kmerSize();
         this.maxDist = 0.6;
         this.outputFormat = MultiAlignReporter.Type.TEXT;
+        this.altBases = new String[0];
     }
 
     @Override
@@ -153,7 +160,7 @@ public class GtoAlignProcessor extends BaseProcessor {
         // Process the alignments.
         try (MultiAlignReporter reporter = this.outputFormat.create(System.out)) {
             // Initialize the output report.
-            reporter.openReport(this.baseGenome);
+            reporter.openReport(this.baseGenome, this.altBases);
             int alignCount = 0;
             // Loop through the alignments
             for (Map.Entry<String, SequenceList> alignRequest : this.sequenceMap.entrySet()) {

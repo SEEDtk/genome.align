@@ -35,7 +35,7 @@ public class HtmlMultiAlignReporter extends MultiAlignReporter {
     }
 
     @Override
-    public void openReport(Genome genome) {
+    public void openReport(Genome genome, String[] altBases) {
         // Write the page header.
         this.println(document().render());
         this.println("<html>");

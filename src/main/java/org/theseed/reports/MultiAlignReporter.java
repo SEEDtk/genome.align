@@ -30,8 +30,9 @@ public abstract class MultiAlignReporter extends BaseReporter {
      * Initialize the report.
      *
      * @param genome	base genome
+     * @param altBases 	array of IDs for additional base genomes
      */
-    public abstract void openReport(Genome genome);
+    public abstract void openReport(Genome genome, String[] altBases);
 
     /**
      * Output a particular alignment.
