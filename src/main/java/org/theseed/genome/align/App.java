@@ -7,7 +7,8 @@ import org.theseed.utils.BaseProcessor;
 /**
  * Commands for Alignment-related utilities.
  *
- *
+ * gtos		align a list of GTOs and output the snips
+ * genomes	align the genomes in a directory and output the snips
  *
  */
 public class App
@@ -22,6 +23,9 @@ public class App
         switch (command) {
         case "gtos" :
             processor = new GtoAlignProcessor();
+            break;
+        case "genomes" :
+            processor = new GenomeAlignProcessor();
             break;
         default:
             throw new RuntimeException("Invalid command " + command);

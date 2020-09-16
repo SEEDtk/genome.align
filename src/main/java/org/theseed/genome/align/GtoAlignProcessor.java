@@ -10,7 +10,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.io.FileUtils;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
@@ -21,10 +20,8 @@ import org.theseed.locations.Location;
 import org.theseed.proteins.Function;
 import org.theseed.proteins.FunctionMap;
 import org.theseed.reports.MultiAlignReporter;
-import org.theseed.sequence.DnaKmers;
 import org.theseed.sequence.Sequence;
 import org.theseed.sequence.clustal.ClustalPipeline;
-import org.theseed.utils.BaseProcessor;
 
 /**
  * This command creates alignments for a list of genomes.  The DNA sequences will be organized by functional assignment and then
@@ -49,7 +46,7 @@ import org.theseed.utils.BaseProcessor;
  * @author Bruce Parrello
  *
  */
-public class GtoAlignProcessor extends BaseProcessor {
+public class GtoAlignProcessor extends BaseAlignProcessor {
 
     // FIELDS
     /** logging facility */
@@ -71,18 +68,6 @@ public class GtoAlignProcessor extends BaseProcessor {
     @Option(name = "--alt", metaVar = "83333.1", usage = "alternate base genome ID")
     private String[] altBases;
 
-    /** working directory */
-    @Option(name = "--workDir", metaVar = "Temp", usage = "working directory for temporary files")
-    private File workDir;
-
-    /** minimum kmer distance for a feature to be aligned */
-    @Option(name = "-m", aliases = { "--maxDist" }, metaVar = "0.5", usage = "maximum kmer distance for a sequence to be placed in an alignment")
-    private double maxDist;
-
-    /** kmer size for computing distances */
-    @Option(name = "-K", metaVar = "15", usage = "kmer size for computing sequence distances")
-    private int kmerSize;
-
     /** first genome */
     @Argument(index = 0, metaVar = "baseGTO", usage = "primary genome file", required = true)
     private File gtoBaseFile;
@@ -91,31 +76,12 @@ public class GtoAlignProcessor extends BaseProcessor {
     @Argument(index = 1, metaVar = "gto2 gto3 ...", usage = "genomes to align to primary", multiValued = true, required = true)
     private List<File> gtoFiles;
 
-    @Override
-    protected void setDefaults() {
-        this.workDir = new File(System.getProperty("user.dir"), "Temp");
-        this.kmerSize = DnaKmers.kmerSize();
-        this.maxDist = 0.6;
+    protected void setProcessDefaults() {
         this.outputFormat = MultiAlignReporter.Type.TEXT;
         this.altBases = new String[0];
     }
 
-    @Override
-    protected boolean validateParms() throws IOException {
-        // Verify the work directory.
-        if (! this.workDir.exists()) {
-            log.info("Creating work directory {}.", this.workDir);
-            FileUtils.forceMkdir(this.workDir);
-            this.workDir.deleteOnExit();
-        } else if (! this.workDir.isDirectory())
-            throw new FileNotFoundException("Work directory " + this.workDir + " not found or invalid.");
-        // Validate the maximum distance.
-        if (this.maxDist <= 0.0)
-            throw new IllegalArgumentException("Maximum distance " + this.maxDist + " must be greater than 0.");
-        // Process the kmer size.
-        if (this.kmerSize < 3 || this.kmerSize > 100)
-            throw new IllegalArgumentException("Kmer size " + this.kmerSize + " is out of range.  Must be >=3 and <= 100.");
-        DnaKmers.setKmerSize(this.kmerSize);
+    protected void validateProcessParms() throws IOException {
         // Verify the genome files.
         if (! this.gtoBaseFile.canRead())
             throw new FileNotFoundException("Genome file " + this.gtoBaseFile + " not found or unreadable.");
@@ -123,13 +89,12 @@ public class GtoAlignProcessor extends BaseProcessor {
             if (! gtoFile.canRead())
                 throw new FileNotFoundException("Genome file " + gtoFile + " not found or unreadable.");
         }
-        return true;
     }
 
     @Override
     protected void runCommand() throws Exception {
         // Create the temporary FASTA file.
-        File tempFile = File.createTempFile("align", ".fna", this.workDir);
+        File tempFile = File.createTempFile("align", ".fna", this.getWorkDir());
         tempFile.deleteOnExit();
         // Create the function maps.
         log.info("Initializing function maps.");
@@ -232,7 +197,8 @@ public class GtoAlignProcessor extends BaseProcessor {
     private boolean addFeature(SequenceList seqList, Feature feat) {
         Location loc = feat.getLocation();
         String dna = feat.getParent().getDna(loc);
-        boolean retVal = seqList.add(feat.getId(), loc.toString(), dna, this.maxDist);
+        boolean retVal = seqList.add(feat.getId(), loc.toString(), dna, this.getMaxDist());
         return retVal;
     }
+
 }
