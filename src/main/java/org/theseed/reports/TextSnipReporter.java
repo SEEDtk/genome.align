@@ -25,7 +25,7 @@ public class TextSnipReporter extends SnipReporter {
     /** buffer for building output lines */
     private StringBuilder buffer;
 
-    public TextSnipReporter(OutputStream output) {
+    public TextSnipReporter(OutputStream output, IParms processor) {
         super(output);
         this.buffer = new StringBuilder(100);
     }
@@ -57,6 +57,10 @@ public class TextSnipReporter extends SnipReporter {
     @Override
     protected void openAlignment(String title, RegionList regions) {
         this.title = title;
+    }
+
+    @Override
+    protected void closeReport() {
     }
 
 }

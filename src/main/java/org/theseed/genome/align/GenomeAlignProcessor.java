@@ -6,6 +6,7 @@ package org.theseed.genome.align;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -16,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
 import org.theseed.genome.GenomeDirectory;
+import org.theseed.proteins.FeatureFilter;
 import org.theseed.proteins.Function;
 import org.theseed.proteins.FunctionMap;
 import org.theseed.reports.SnipReporter;
@@ -37,15 +39,16 @@ import org.theseed.sequence.clustal.ClustalPipeline;
  * -m	maximum kmer distance for a region to be aligned
  * -K	kmer size for computing distances
  * -u	maximum upstream distance for protein regions
+ * -w	maximum cell character width for HTML tables
  *
+ * --filter		types of filters; features that fail the filter will not be added to the pending alignments
  * --format		output report format
  * --workDir	working directory name; the default is "Temp" in the current directory
- *
  *
  * @author Bruce Parrello
  *
  */
-public class GenomeAlignProcessor extends BaseAlignProcessor {
+public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureFilter.IParms, SnipReporter.IParms {
 
     // FIELDS
     /** logging facility */
@@ -58,12 +61,22 @@ public class GenomeAlignProcessor extends BaseAlignProcessor {
     private SnipReporter reporter;
     /** ID of the base genome */
     private String baseId;
+    /** list of filters */
+    private List<FeatureFilter> filters;
 
     // COMMAND-LINE OPTIONS
 
     /** output format */
     @Option(name = "--format", usage = "output format")
     private SnipReporter.Type outputFormat;
+
+    /** filtering scheme for features */
+    @Option(name = "--filter", usage = "type of feature filtering")
+    private List<FeatureFilter.Type> filterTypes;
+
+    /** maximum cell width for HTML tables */
+    @Option(name = "-w", aliases = { "--cellWidth" }, metaVar = "10", usage = "maximum character width for a snip display cell")
+    private int cellWidth;
 
     /** maximum upstream distance for protein neighborhoods */
     @Option(name = "-u", aliases = { "--upstream" }, metaVar = "1000", usage = "maximum upstream distance for protein neighborhoods")
@@ -84,6 +97,8 @@ public class GenomeAlignProcessor extends BaseAlignProcessor {
     @Override
     protected void setProcessDefaults() {
         this.outputFormat = SnipReporter.Type.TEXT;
+        this.filterTypes = new ArrayList<FeatureFilter.Type>();
+        this.cellWidth = 20;
     }
 
     @Override
@@ -98,7 +113,11 @@ public class GenomeAlignProcessor extends BaseAlignProcessor {
         if (! this.baseGto.canRead())
             throw new FileNotFoundException("Base genome file " + this.baseGto + " not found or unreadable.");
         // Create the report object.
-        this.reporter = this.outputFormat.create(System.out);
+        this.reporter = this.outputFormat.create(System.out, this);
+        // Create the filter list.
+        this.filters = new ArrayList<FeatureFilter>(this.filterTypes.size());
+        for (FeatureFilter.Type filterType : this.filterTypes)
+            this.filters.add(filterType.create(this));
     }
 
     @Override
@@ -130,11 +149,13 @@ public class GenomeAlignProcessor extends BaseAlignProcessor {
             }
         }
         // Finish the report.
+        this.reporter.finishReport();
         this.reporter.close();
     }
 
     /**
      * This method reads in all the genomes and builds the alignment lists.
+     *
      * @throws IOException
      */
     private void buildAlignments() throws IOException {
@@ -166,38 +187,70 @@ public class GenomeAlignProcessor extends BaseAlignProcessor {
                 log.info("Processing input genome {}.", genome);
                 // Register the genome if it is NOT one of the wild strains.  Everything is aligned, but only the base and the
                 // non-wilds are output.
-                if (! this.altIds.contains(genome.getId()))
+                boolean wild = this.altIds.contains(genome.getId());
+                if (! wild)
                     this.reporter.register(genome);
                 // Process the regions for this genome.
                 int foundCount = 0;
                 int badFunCount = 0;
                 int tooFarCount = 0;
+                int filterCount = 0;
+                int sameCount = 0;
                 ExtendedProteinRegion.GenomeIterator iter = new ExtendedProteinRegion.GenomeIterator(genome, this.maxUpstream);
                 while (iter.hasNext()) {
                     // Get this region and try to find the function in the function map.
                     ExtendedProteinRegion region = iter.next();
-                    Feature feat = region.getFeature();
-                    Function fun = this.funMap.getByName(feat.getFunction());
-                    if (fun == null)
-                        badFunCount++;
+                    if (! this.checkFilters(region))
+                        filterCount++;
                     else {
-                        // Here we found it.  If we didn't find it, then it won't match anything anyway.
-                        RegionList regions = baseMap.get(fun.getId());
-                        ExtendedProteinRegion closest = regions.getClosest(region, this.getMaxDist());
-                        if (closest == null)
-                            tooFarCount++;
+                        Feature feat = region.getFeature();
+                        Function fun = this.funMap.getByName(feat.getFunction());
+                        if (fun == null)
+                            badFunCount++;
                         else {
-                            // Here we have an eligible close feature.  Add this region to its alignment list.
-                            feat = closest.getFeature();
-                            this.alignMap.get(feat).add(region);
-                            foundCount++;
+                            // Here we found it.  If we didn't find it, then it won't match anything anyway.
+                            RegionList regions = baseMap.get(fun.getId());
+                            ExtendedProteinRegion closest = regions.getClosest(region, this.getMaxDist());
+                            if (closest == null)
+                                tooFarCount++;
+                            else {
+                                // Here we have an eligible close feature.  Add this region to its alignment list.  We always
+                                // add a wild strain, but we skip anything that has the same protein.
+                                Feature featBase = closest.getFeature();
+                                String protBase = featBase.getProteinTranslation();
+                                String upstreamDnaBase = closest.getUpstreamDna();
+                                if (! wild && protBase.contentEquals(feat.getProteinTranslation()) && upstreamDnaBase.contentEquals(region.getUpstreamDna()))
+                                    sameCount++;
+                                else {
+                                    RegionList alignment = this.alignMap.get(featBase);
+                                    alignment.add(region);
+                                    foundCount++;
+                                }
+                            }
                         }
                     }
                 }
                 log.info("{} regions queued for alignment.  {} had unusual functions, {} were too far to align.",
                         foundCount, badFunCount, tooFarCount);
+                log.info("{} regions rejected by filtering.  {} skipped because of protein identity.", filterCount, sameCount);
             }
         }
+    }
+
+    /**
+     * @return TRUE if this region is acceptable, FALSE if it is rejected by the feature filters
+     *
+     * @param region	region to check
+     */
+    private boolean checkFilters(ExtendedProteinRegion region) {
+        Feature feat = region.getFeature();
+        boolean retVal = this.filters.stream().allMatch(x -> x.filter(feat));
+        return retVal;
+    }
+
+    @Override
+    public int getCellWidth() {
+        return this.cellWidth;
     }
 
 }

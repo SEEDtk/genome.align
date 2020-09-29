@@ -37,22 +37,37 @@ public abstract class SnipReporter extends BaseReporter {
      * Enum for different report formats
      */
     public static enum Type {
-        TEXT;
+        TEXT, HTML;
 
         /**
          * @return a reporting object of this type
          *
-         * @param output	output stream to receive the report
+         * @param output		output stream to receive the report
+         * @param processor		constructing client
          */
-        public SnipReporter create(OutputStream output) {
+        public SnipReporter create(OutputStream output, IParms processor) {
             SnipReporter retVal = null;
             switch (this) {
             case TEXT :
-                retVal = new TextSnipReporter(output);
+                retVal = new TextSnipReporter(output, processor);
                 break;
+            case HTML :
+                retVal = new HtmlSnipReporter(output, processor);
             }
             return retVal;
         }
+    }
+
+    /**
+     * Interface used by constructing clients to pass along parameters.
+     */
+    public interface IParms {
+
+        /**
+         * @return the maximum width for text in an alignment cell
+         */
+        int getCellWidth();
+
     }
 
     /**
@@ -126,9 +141,12 @@ public abstract class SnipReporter extends BaseReporter {
     }
 
     /**
-     * Finish the report section for the current alignment.
+     * Begin the section of the report for a new alignment.
+     *
+     * @param title		title of alignment
+     * @param regions	regions being aligned
      */
-    protected abstract void closeAlignment();
+    protected abstract void openAlignment(String title, RegionList regions);
 
     /**
      * Process a single set of snips.
@@ -138,12 +156,20 @@ public abstract class SnipReporter extends BaseReporter {
     protected abstract void processSnips(SnipColumn snipCol);
 
     /**
-     * Begin the section of the report for a new alignment.
-     *
-     * @param title		title of alignment
-     * @param regions	regions being aligned
+     * Finish the report section for the current alignment.
      */
-    protected abstract void openAlignment(String title, RegionList regions);
+    protected abstract void closeAlignment();
 
+    /**
+     * Finish the entire report.
+     */
+    protected abstract void closeReport();
+
+    /**
+     *
+     */
+    public void finishReport() {
+        this.closeReport();
+    }
 
 }
