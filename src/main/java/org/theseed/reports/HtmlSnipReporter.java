@@ -7,11 +7,15 @@ import java.io.OutputStream;
 import static j2html.TagCreator.*;
 
 import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
-import java.util.stream.Collectors;
-
+import java.util.Map;
 import org.apache.commons.lang3.StringUtils;
+import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
+import org.theseed.locations.Location;
 import org.theseed.sequence.ExtendedProteinRegion;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.clustal.RealSnipItem;
@@ -30,22 +34,26 @@ import j2html.tags.DomContent;
 public class HtmlSnipReporter extends SnipReporter {
 
     // FIELDS
-    /** current alignment table */
-    private HtmlTable<Key.Null> alignment;
     /** list of genome IDs */
     private List<String> genomeIds;
-    /** list of HTML segments */
-    private List<DomContent> sections;
+    /** current table section */
+    private TableEntry table;
+    /** list of table sections */
+    private List<TableEntry> sections;
     /** alignment table column specification array */
     private ColSpec[] cols;
-    /** current section title */
-    private String title;
     /** page writer */
     private PageWriter writer;
     /** cell width */
     private int cellWidth;
+    /** tracker for number of genome differences */
+    private BitSet diffs;
     /** current region list */
     private RegionList regions;
+    /** map of genome IDs to names */
+    private Map<String, String> gNameMap;
+    /** sorter to use for output */
+    private Comparator<TableEntry> sorter;
     /** background color for snip differences */
     public static final Color DIFF_COLOR = new Color(0.50, 0.73, 1.0);
     /** style for snip differences */
@@ -65,43 +73,168 @@ public class HtmlSnipReporter extends SnipReporter {
     /** HTML encoding for a hard break */
     private static final String BREAK_RENDER = br().render();
 
+    /**
+     * Utility class for sorting the output by number of differences.
+     */
+    private class TableEntry {
+
+        /** difference count */
+        private int diffCount;
+        /** base feature location */
+        private Location loc;
+        /** section title */
+        private String title;
+        /** section table */
+        private HtmlTable<Key.Null> alignment;
+
+        /**
+         * Create a new table entry.
+         *
+         * @param title		title of this table
+         * @param regions	source region list
+         */
+        protected TableEntry(String title, RegionList regions) {
+            this.diffCount = 0;
+            Feature feat = regions.get(0).getFeature();
+            this.loc = feat.getLocation();
+            this.title = title;
+            this.alignment = new HtmlTable<Key.Null>(HtmlSnipReporter.this.cols);
+        }
+
+        /**
+         * Add a row to the alignment table.
+         *
+         * @param locString		location string for the snip in this row
+         * @param row			row of snip HTML strings to add
+         */
+        public void addRow(String locString, List<DomContent> row) {
+            HtmlTable<Key.Null>.Row trow = this.alignment.new Row(Key.NONE).add(locString);
+            row.stream().forEach(x -> trow.add(x));
+        }
+
+        /**
+         * @return the number of rows in the alignment table.
+         */
+        public int getHeight() {
+            return this.alignment.getHeight();
+        }
+
+        /**
+         * @return the output for this table entry
+         */
+        public DomContent output() {
+            return div(h2(this.title), this.alignment.output());
+        }
+
+        /**
+         * Update the difference count.
+         *
+         * @param diff	number of modified genomes in this alignment
+         */
+        public void setDiffCount(int diff) {
+            this.diffCount = diff;
+        }
+
+    }
+
+    /**
+     * Sort types for table entries.
+     */
+    public static enum Sort {
+        LOCATION, CHANGES;
+
+        /**
+         * @return a sorter of the specified type
+         */
+        protected Comparator<TableEntry> create() {
+            Comparator<TableEntry> retVal = null;
+            switch (this) {
+            case LOCATION :
+                retVal = new LocationSort();
+                break;
+            case CHANGES :
+                retVal = new DiffSort();
+                break;
+            }
+            return retVal;
+        }
+
+    }
+
+    /**
+     * Table entry sorter for location-based sorts
+     */
+    public static class LocationSort implements Comparator<TableEntry> {
+
+        @Override
+        public int compare(TableEntry o1, TableEntry o2) {
+            int retVal = o1.loc.compareTo(o2.loc);
+            if (retVal == 0)
+                retVal = o1.title.compareTo(o2.title);
+            return retVal;
+        }
+
+    }
+
+    /**
+     * Table entry sorter for difference-based sorts
+     */
+    public static class DiffSort implements Comparator<TableEntry> {
+
+        @Override
+        public int compare(TableEntry o1, TableEntry o2) {
+            int retVal = o2.diffCount - o1.diffCount;
+            if (retVal == 0) {
+                retVal = o1.loc.compareTo(o2.loc);
+                if (retVal == 0)
+                    retVal = o1.title.compareTo(o2.title);
+            }
+            return retVal;
+        }
+
+    }
 
 
     public HtmlSnipReporter(OutputStream output, IParms processor) {
         super(output);
-        // Create the section list and prime it with the legend.
-        this.sections = new ArrayList<DomContent>(100);
-        DomContent legend = p(text("Color scheme: "), span("Upstream difference. ").withStyle(UPSTREAM_STYLE),
-                span("Gap-related difference. ").withStyle(GAP_STYLE), span("Invisible difference. ").withStyle(INVISI_STYLE),
-                span("Protein-modifying difference.").withStyle(DIFF_STYLE));
-        this.sections.add(legend);
         // Create the HTML writer.
         this.writer = new FreePageWriter();
         // Get the cell width.
         this.cellWidth = processor.getCellWidth();
+        // Create the genome map.
+        this.gNameMap = new HashMap<String, String>();
+        // Create the table list.
+        this.sections = new ArrayList<TableEntry>(1000);
+        // Create the output sorter.
+        this.sorter = processor.getSort().create();
     }
 
     @Override
     protected void registerGenome(Genome genome) {
+        this.gNameMap.put(genome.getId(), genome.getName());
     }
 
     @Override
     protected void openReport(List<String> genomeIdList) {
-        // Save the genome ID list.  Note that the first genome is the base.
+        // Save the genome ID list.  Note that the first genome is the base, and the location column precedes it.
         this.genomeIds = genomeIdList;
-        List<ColSpec> colSpecs = this.genomeIds.stream().map(x -> new ColSpec.Aligned(x)).collect(Collectors.toList());
+        List<ColSpec> colSpecs = new ArrayList<ColSpec>(this.genomeIds.size() + 1);
+        colSpecs.add(new ColSpec.Normal("Location"));
+        this.genomeIds.stream().forEach(x -> colSpecs.add(new ColSpec.Aligned(x).setTip(this.gNameMap.get(x))));
         ColSpec[] cols = new ColSpec[colSpecs.size()];
         this.cols = colSpecs.toArray(cols);
+        // Create the difference bitmap.
+        this.diffs = new BitSet(this.genomeIds.size());
     }
 
     @Override
     protected void openAlignment(String title, RegionList regions) {
-        // Each alignment has its own table.  We start by saving the title.
-        this.title = title;
-        // Start the table.
-        this.alignment = new HtmlTable<Key.Null>(cols);
+        // Each alignment has its own table.
+        this.table = this.new TableEntry(title, regions);
         // Save the region list.
         this.regions = regions;
+        // Clear the difference bitmap.
+        this.diffs.clear();
     }
 
     @Override
@@ -142,25 +275,28 @@ public class HtmlSnipReporter extends SnipReporter {
                     if (c == cBase)
                         buffer.append(c);
                     else if (c == '-' || cBase == '-') {
-                        buffer.append(markedLetter(c, GAP_STYLE));
+                        buffer.append(markedLetter(c, GAP_STYLE).render());
                         diffCount++;
+                        this.diffs.set(i);
                     } else {
                         // Here we have a character change.  We need to determine the amino acid difference.
                         String oldAA = baseAA[p];
                         if (oldAA.contentEquals("upstream")) {
-                            buffer.append(markedLetter(c, UPSTREAM_STYLE));
+                            buffer.append(markedLetter(c, UPSTREAM_STYLE).render());
                             diffCount++;
+                            this.diffs.set(i);
                         } else {
                             String newAA = thisAA[p];
                             // Check for an invisible change.
                             if (! oldAA.equals("upstream") && oldAA.contentEquals(newAA))
-                                buffer.append(markedLetter(c, INVISI_STYLE));
+                                buffer.append(markedLetter(c, INVISI_STYLE).render());
                             else {
                                 // Here we have a modifying change.  This requires a tooltip AND coloring.
-                                DomContent letter = span(rawHtml(markedLetter(c, DIFF_STYLE)
-                                        + span(oldAA + " => " + newAA).withClass("tip").render())).withClass("tt");
+                                DomContent letter = CoreHtmlUtilities.toolTip(markedLetter(c, DIFF_STYLE),
+                                        oldAA + " => " + newAA);
                                 buffer.append(letter.render());
                                 diffCount++;
+                                this.diffs.set(i);
                             }
                         }
                     }
@@ -172,8 +308,7 @@ public class HtmlSnipReporter extends SnipReporter {
         }
         // Only add the row if we found one visible difference.
         if (diffCount > 0) {
-            HtmlTable<Key.Null>.Row trow = this.alignment.new Row(Key.NONE);
-            row.stream().forEach(x -> trow.add(x));
+            this.table.addRow(snipCol.getLocString(0), row);
         }
     }
 
@@ -183,8 +318,8 @@ public class HtmlSnipReporter extends SnipReporter {
      * @param c			letter to highlight
      * @param style		highlight style
      */
-    protected String markedLetter(char c, String style) {
-        return mark(Character.toString(c)).withStyle(style).render();
+    protected DomContent markedLetter(char c, String style) {
+        return mark(Character.toString(c)).withStyle(style);
     }
 
     /**
@@ -207,17 +342,22 @@ public class HtmlSnipReporter extends SnipReporter {
 
     @Override
     protected void closeAlignment() {
-        // Output the table.
-        if (this.alignment.getHeight() > 0) {
-            this.sections.add(h2(title));
-            this.sections.add(this.alignment.output());
+        // Output the table.  Note we record the number of changed genomes, which is used for sorting.
+        if (this.table.getHeight() > 0) {
+            this.table.setDiffCount(this.diffs.cardinality());
+            this.sections.add(this.table);
         }
     }
 
     @Override
     protected void closeReport() {
         // Form the tables into a page.
-        DomContent block = this.writer.highlightBlock(this.sections);
+        DomContent legend = p(text("Color scheme: "), span("Upstream difference. ").withStyle(UPSTREAM_STYLE),
+                span("Gap-related difference. ").withStyle(GAP_STYLE), span("Invisible difference. ").withStyle(INVISI_STYLE),
+                span("Protein-modifying difference.").withStyle(DIFF_STYLE));
+        this.sections.sort(this.sorter);
+        DomContent tables = div().with(this.sections.stream().map(x -> x.output()));
+        DomContent block = this.writer.highlightBlock(legend, tables);
         this.writer.writePage("Snip Alignments", h1("Snip Alignments"), block);
     }
 

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +69,11 @@ public abstract class SnipReporter extends BaseReporter {
          */
         int getCellWidth();
 
+        /**
+         * @return the sort order for the HTML tables
+         */
+        HtmlSnipReporter.Sort getSort();
+
     }
 
     /**
@@ -96,6 +102,30 @@ public abstract class SnipReporter extends BaseReporter {
      * @param genome	genome to register
      */
     protected abstract void registerGenome(Genome genome);
+
+    /**
+     * Reorder the genome IDs according to the input list.  The first genome ID is not changed, since that's the base.
+     *
+     * @param orderingList	list of genome IDs representing the desired order
+     */
+    public void reorder(List<String> orderingList) {
+        // Create a set of all the existing genomes.
+        Set<String> oldGenomes = this.genomeIds.stream().collect(Collectors.toSet());
+        // Copy the base genome to the output list.
+        String baseGenome = this.genomeIds.get(0);
+        this.genomeIds.clear();
+        this.genomeIds.add(baseGenome);
+        oldGenomes.remove(baseGenome);
+        // Now loop through the ordering list, adding all the genomes that are legitimate.
+        for (String genome : orderingList) {
+            if (oldGenomes.contains(genome)) {
+                this.genomeIds.add(genome);
+                oldGenomes.remove(genome);
+            }
+        }
+        // Now add the residual.
+        this.genomeIds.addAll(oldGenomes);
+    }
 
     /**
      * Begin the alignment portion of the report.

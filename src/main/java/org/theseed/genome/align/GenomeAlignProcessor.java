@@ -17,11 +17,15 @@ import org.slf4j.LoggerFactory;
 import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
 import org.theseed.genome.GenomeDirectory;
+import org.theseed.io.TabbedLineReader;
 import org.theseed.proteins.FeatureFilter;
 import org.theseed.proteins.Function;
 import org.theseed.proteins.FunctionMap;
+import org.theseed.reports.HtmlSnipReporter;
+import org.theseed.reports.HtmlSnipReporter.Sort;
 import org.theseed.reports.SnipReporter;
 import org.theseed.sequence.ExtendedProteinRegion;
+import org.theseed.sequence.MarkedRegionList;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.Sequence;
 import org.theseed.sequence.clustal.ClustalPipeline;
@@ -44,6 +48,8 @@ import org.theseed.sequence.clustal.ClustalPipeline;
  * --filter		types of filters; features that fail the filter will not be added to the pending alignments
  * --format		output report format
  * --workDir	working directory name; the default is "Temp" in the current directory
+ * --sort		sort order for HTML output
+ * --gFile		file containing a list of genome IDs, used to determine the order of the output columns
  *
  * @author Bruce Parrello
  *
@@ -56,19 +62,25 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     /** function definitions */
     private FunctionMap funMap;
     /** list of regions to align by base genome feature */
-    private Map<Feature, RegionList> alignMap;
+    private Map<Feature, MarkedRegionList> alignMap;
     /** reporting object */
     private SnipReporter reporter;
     /** ID of the base genome */
     private String baseId;
     /** list of filters */
     private List<FeatureFilter> filters;
+    /** genome ID reordering list */
+    private List<String> genomeIds;
 
     // COMMAND-LINE OPTIONS
 
     /** output format */
     @Option(name = "--format", usage = "output format")
     private SnipReporter.Type outputFormat;
+
+    /** sort order for HTML tables */
+    @Option(name = "--sort", usage = "sort order for HTML tables")
+    private HtmlSnipReporter.Sort sortOrder;
 
     /** filtering scheme for features */
     @Option(name = "--filter", usage = "type of feature filtering")
@@ -81,6 +93,10 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     /** maximum upstream distance for protein neighborhoods */
     @Option(name = "-u", aliases = { "--upstream" }, metaVar = "1000", usage = "maximum upstream distance for protein neighborhoods")
     private int maxUpstream;
+
+    /** file of genome IDs specifying the column ordering on the output */
+    @Option(name = "--gFile", metaVar = "genomeIDs.txt", usage = "file of genome IDs specifying the output column order")
+    private File gFile;
 
     /** input genome directory */
     @Argument(index = 0, metaVar = "inDir", usage = "input genome directory", required = true)
@@ -99,6 +115,9 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         this.outputFormat = SnipReporter.Type.TEXT;
         this.filterTypes = new ArrayList<FeatureFilter.Type>();
         this.cellWidth = 20;
+        this.sortOrder = HtmlSnipReporter.Sort.CHANGES;
+        this.gFile = null;
+        this.genomeIds = null;
     }
 
     @Override
@@ -118,6 +137,17 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         this.filters = new ArrayList<FeatureFilter>(this.filterTypes.size());
         for (FeatureFilter.Type filterType : this.filterTypes)
             this.filters.add(filterType.create(this));
+        // Create the genome ID ordering list (if any).
+        if (this.gFile != null) {
+            if (! this.gFile.canRead())
+                throw new FileNotFoundException("Genome ID ordering file " + this.gFile + " not found or unreadable.");
+            try (TabbedLineReader gStream = new TabbedLineReader(this.gFile, 1)) {
+                this.genomeIds = new ArrayList<String>();
+                for (TabbedLineReader.Line line : gStream)
+                    this.genomeIds.add(line.get(0));
+                log.info("{} genome IDs read from ordering file {}.", this.genomeIds.size(), this.gFile);
+            }
+        }
     }
 
     @Override
@@ -125,9 +155,12 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         // Create the function map.
         this.funMap = new FunctionMap();
         // Create the region list map.  It is keyed by feature with sorting by location, so the output is in chromosome order.
-        this.alignMap = new TreeMap<Feature, RegionList>(new Feature.LocationComparator());
+        this.alignMap = new TreeMap<Feature, MarkedRegionList>(new Feature.LocationComparator());
         // Build all the alignment lists.
         this.buildAlignments();
+        // Fix the ordering (if necessary).
+        if (this.genomeIds != null)
+            this.reporter.reorder(this.genomeIds);
         // Denote we are done registering genomes.
         this.reporter.initializeOutput();
         // Create our temporary file.
@@ -135,9 +168,10 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         tempFile.deleteOnExit();
         // Loop through the alignments.
         log.info("Processing alignments.");
-        for (Map.Entry<Feature, RegionList> alignEntry : this.alignMap.entrySet()) {
-            RegionList regions = alignEntry.getValue();
-            if (regions.size() >= 3) {
+        for (Map.Entry<Feature, MarkedRegionList> alignEntry : this.alignMap.entrySet()) {
+            MarkedRegionList regions = alignEntry.getValue();
+            // We only align these regions if at least one has a functional difference.
+            if (regions.getCounter() > 0) {
                 // Here we have enough data to do an alignment.
                 Feature feat = alignEntry.getKey();
                 log.info("Performing alignment on {}.", feat);
@@ -169,7 +203,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         log.info("Sorting features by location.");
         for (RegionList regions : baseMap.values()) {
             for (ExtendedProteinRegion region : regions) {
-                RegionList singleton = new RegionList();
+                MarkedRegionList singleton = new MarkedRegionList();
                 singleton.add(region);
                 this.alignMap.put(region.getFeature(), singleton);
             }
@@ -215,16 +249,19 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                                 tooFarCount++;
                             else {
                                 // Here we have an eligible close feature.  Add this region to its alignment list.  We always
-                                // add a wild strain, but we skip anything that has the same protein.
+                                // count a wild strain, but we skip anything that has the same protein.
                                 Feature featBase = closest.getFeature();
                                 String protBase = featBase.getProteinTranslation();
                                 String upstreamDnaBase = closest.getUpstreamDna();
-                                if (! wild && protBase.contentEquals(feat.getProteinTranslation()) && upstreamDnaBase.contentEquals(region.getUpstreamDna()))
-                                    sameCount++;
-                                else {
-                                    RegionList alignment = this.alignMap.get(featBase);
-                                    alignment.add(region);
-                                    foundCount++;
+                                MarkedRegionList alignment = this.alignMap.get(featBase);
+                                alignment.add(region);
+                                if (! wild) {
+                                    if (protBase.contentEquals(feat.getProteinTranslation()) && upstreamDnaBase.contentEquals(region.getUpstreamDna()))
+                                        sameCount++;
+                                    else {
+                                        alignment.increment();
+                                        foundCount++;
+                                    }
                                 }
                             }
                         }
@@ -232,7 +269,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                 }
                 log.info("{} regions queued for alignment.  {} had unusual functions, {} were too far to align.",
                         foundCount, badFunCount, tooFarCount);
-                log.info("{} regions rejected by filtering.  {} skipped because of protein identity.", filterCount, sameCount);
+                log.info("{} regions rejected by filtering.  {} were functionally identical to the base.", filterCount, sameCount);
             }
         }
     }
@@ -251,6 +288,11 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     @Override
     public int getCellWidth() {
         return this.cellWidth;
+    }
+
+    @Override
+    public Sort getSort() {
+        return this.sortOrder;
     }
 
 }
