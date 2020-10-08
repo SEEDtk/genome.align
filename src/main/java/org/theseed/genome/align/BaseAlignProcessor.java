@@ -26,15 +26,14 @@ public abstract class BaseAlignProcessor extends BaseProcessor {
     @Option(name = "--workDir", metaVar = "Temp", usage = "working directory for temporary files")
     private File workDir;
     /** minimum kmer distance for a feature to be aligned */
-    @Option(name = "-m", aliases = {
-            "--maxDist" }, metaVar = "0.5", usage = "maximum kmer distance for a sequence to be placed in an alignment")
+    @Option(name = "-m", aliases = { "--maxDist" }, metaVar = "0.5", usage = "maximum kmer distance for a sequence to be placed in an alignment")
     private double maxDist;
     /** kmer size for computing distances */
     @Option(name = "-K", metaVar = "15", usage = "kmer size for computing sequence distances")
     private int kmerSize;
 
     @Override
-    protected void setDefaults() {
+    protected final void setDefaults() {
         this.workDir = new File(System.getProperty("user.dir"), "Temp");
         this.kmerSize = DnaKmers.kmerSize();
         this.maxDist = 0.6;
@@ -47,7 +46,7 @@ public abstract class BaseAlignProcessor extends BaseProcessor {
     protected abstract void setProcessDefaults();
 
     @Override
-    protected boolean validateParms() throws IOException {
+    protected final boolean validateParms() throws IOException {
         // Verify the work directory.
         if (! this.workDir.exists()) {
             log.info("Creating work directory {}.", this.workDir);

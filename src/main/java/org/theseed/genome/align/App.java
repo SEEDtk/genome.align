@@ -27,6 +27,9 @@ public class App
         case "genomes" :
             processor = new GenomeAlignProcessor();
             break;
+        case "splice" :
+            processor = new SpliceProcessor();
+            break;
         default:
             throw new RuntimeException("Invalid command " + command);
         }
