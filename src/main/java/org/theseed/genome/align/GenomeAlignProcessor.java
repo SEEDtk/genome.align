@@ -29,6 +29,7 @@ import org.theseed.sequence.MarkedRegionList;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.Sequence;
 import org.theseed.sequence.clustal.ClustalPipeline;
+import org.theseed.utils.ParseFailureException;
 
 /**
  * This command will read the genomes in a directory and output the snips.  One or more genomes will be identified as the wild
@@ -121,10 +122,10 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     }
 
     @Override
-    protected void validateProcessParms() throws IOException {
+    protected void validateProcessParms() throws IOException, ParseFailureException {
         // Verify the upstream distance.
         if (this.maxUpstream < 0)
-            throw new IllegalArgumentException("Upstream distance must be 0 or more.");
+            throw new ParseFailureException("Upstream distance must be 0 or more.");
         // Verify the input directory.
         if (! this.inDir.isDirectory())
             throw new FileNotFoundException("Input directory " + this.inDir + " is not found or invalid.");

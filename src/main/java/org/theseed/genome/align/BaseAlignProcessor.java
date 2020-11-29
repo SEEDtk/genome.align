@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.theseed.sequence.DnaKmers;
 import org.theseed.utils.BaseProcessor;
+import org.theseed.utils.ParseFailureException;
 
 /**
  * @author Bruce Parrello
@@ -46,7 +47,7 @@ public abstract class BaseAlignProcessor extends BaseProcessor {
     protected abstract void setProcessDefaults();
 
     @Override
-    protected final boolean validateParms() throws IOException {
+    protected final boolean validateParms() throws IOException, ParseFailureException {
         // Verify the work directory.
         if (! this.workDir.exists()) {
             log.info("Creating work directory {}.", this.workDir);
@@ -56,10 +57,10 @@ public abstract class BaseAlignProcessor extends BaseProcessor {
             throw new FileNotFoundException("Work directory " + this.workDir + " not found or invalid.");
         // Validate the maximum distance.
         if (this.maxDist <= 0.0)
-            throw new IllegalArgumentException("Maximum distance " + this.maxDist + " must be greater than 0.");
+            throw new ParseFailureException("Maximum distance " + this.maxDist + " must be greater than 0.");
         // Process the kmer size.
         if (this.kmerSize < 3 || this.kmerSize > 100)
-            throw new IllegalArgumentException("Kmer size " + this.kmerSize + " is out of range.  Must be >=3 and <= 100.");
+            throw new ParseFailureException("Kmer size " + this.kmerSize + " is out of range.  Must be >=3 and <= 100.");
         DnaKmers.setKmerSize(this.kmerSize);
         this.validateProcessParms();
         return true;
@@ -69,8 +70,9 @@ public abstract class BaseAlignProcessor extends BaseProcessor {
      * Validate the parameters local to the processor.
      *
      * @throws IOException
+     * @throws ParseFailureException
      */
-    protected abstract void validateProcessParms() throws IOException;
+    protected abstract void validateProcessParms() throws IOException, ParseFailureException;
 
     /**
      * @return the working directory

@@ -28,6 +28,7 @@ import org.theseed.sequence.ExtendedProteinRegion;
 import org.theseed.sequence.FastaOutputStream;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.Sequence;
+import org.theseed.utils.ParseFailureException;
 
 /**
  * This command performs a BLAST to splice the DNA from a gegnome (the source) into the DNA from another genome (the
@@ -97,9 +98,9 @@ public class SpliceProcessor extends BaseAlignProcessor {
     }
 
     @Override
-    protected void validateProcessParms() throws IOException {
+    protected void validateProcessParms() throws IOException, ParseFailureException {
         if (this.maxUpstream < 0)
-            throw new IllegalArgumentException("Upstream length must be non-negative.");
+            throw new ParseFailureException("Upstream length must be non-negative.");
         if (! this.sourceFile.canRead())
             throw new FileNotFoundException("Source genome file " + this.sourceFile + " not found or unreadable.");
         if (! this.refFile.canRead())
