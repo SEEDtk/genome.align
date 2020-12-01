@@ -20,6 +20,9 @@ import org.theseed.sequence.ExtendedProteinRegion;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.clustal.RealSnipItem;
 import org.theseed.sequence.clustal.SnipColumn;
+import org.theseed.web.ColSpec;
+import org.theseed.web.HtmlTable;
+import org.theseed.web.Key;
 
 import j2html.tags.DomContent;
 
