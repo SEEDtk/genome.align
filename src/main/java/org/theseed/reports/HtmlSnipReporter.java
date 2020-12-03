@@ -23,6 +23,7 @@ import org.theseed.sequence.clustal.SnipColumn;
 import org.theseed.web.ColSpec;
 import org.theseed.web.HtmlTable;
 import org.theseed.web.Key;
+import org.theseed.web.Row;
 
 import j2html.tags.DomContent;
 
@@ -111,7 +112,7 @@ public class HtmlSnipReporter extends SnipReporter {
          * @param row			row of snip HTML strings to add
          */
         public void addRow(String locString, List<DomContent> row) {
-            HtmlTable<Key.Null>.Row trow = this.alignment.new Row(Key.NONE).add(locString);
+            Row<Key.Null> trow = new Row<Key.Null>(this.alignment, Key.NONE).add(locString);
             row.stream().forEach(x -> trow.add(x));
         }
 
