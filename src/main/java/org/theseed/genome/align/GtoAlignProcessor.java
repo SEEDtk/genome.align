@@ -6,10 +6,12 @@ package org.theseed.genome.align;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
@@ -42,6 +44,7 @@ import org.theseed.sequence.clustal.ClustalPipeline;
  * --workDir	working directory name; the default is "Temp" in the current directory
  * --alt		ID of a genome other than the base that is to be used as an alternate base; a snip is only output if it does not
  * 				match the base or any of the alternates
+ * --upstream	check for illusory indels
  *
  * @author Bruce Parrello
  *
@@ -57,12 +60,20 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
     private Map<String, SequenceList> sequenceMap;
     /** base genome */
     private Genome baseGenome;
+    /** map of genome IDs to other genomes */
+    private Map<String, Genome> genomeMap;
+    /** number of upstream region recaptures */
+    private int recaptures;
 
     // COMMAND-LINE OPTIONS
 
     /** output format */
     @Option(name = "--format", usage = "output format")
     private MultiAlignReporter.Type outputFormat;
+
+    /** if specified, the upstream will be checked for illusory indels */
+    @Option(name = "--upstream", usage = "if specified, an upstream check will be made for an illusory indel")
+    private boolean upstreamCheck;
 
     /** alternate base genome IDs */
     @Option(name = "--alt", metaVar = "83333.1", usage = "alternate base genome ID")
@@ -79,6 +90,7 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
     protected void setProcessDefaults() {
         this.outputFormat = MultiAlignReporter.Type.TEXT;
         this.altBases = new String[0];
+        this.upstreamCheck = false;
     }
 
     protected void validateProcessParms() throws IOException {
@@ -96,16 +108,21 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
         // Create the temporary FASTA file.
         File tempFile = File.createTempFile("align", ".fna", this.getWorkDir());
         tempFile.deleteOnExit();
+        // Create the genome map.
+        this.genomeMap = new HashMap<String, Genome>(this.gtoFiles.size());
         // Create the function maps.
         log.info("Initializing function maps.");
         this.functionMap = new FunctionMap();
         this.sequenceMap = new HashMap<String, SequenceList>(3000);
+        this.recaptures = 0;
         // Process the base genome to compute the functions of interest.
         this.processBase(this.gtoBaseFile);
         // Loop through the other genomes.
         for (File gtoFile : this.gtoFiles) {
             Genome genome = new Genome(gtoFile);
             log.info("Scanning genome {}.", genome);
+            if (this.upstreamCheck)
+                this.genomeMap.put(genome.getId(), genome);
             // Loop through the genome's pegs.
             int kept = 0;
             for (Feature feat : genome.getPegs()) {
@@ -139,6 +156,8 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
                     // Process the alignment.
                     ClustalPipeline aligner = new ClustalPipeline(tempFile);
                     List<Sequence> alignment = aligner.run();
+                    if (this.upstreamCheck)
+                        this.checkUpstream(alignment);
                     reporter.writeAlignment(function, alignment);
                     alignCount++;
                 }
@@ -146,8 +165,63 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
             // Finish the report.
             reporter.closeReport();
             log.info("{} alignments output.", alignCount);
+            if (this.upstreamCheck)
+                log.info("{} upstream regions recaptured.", this.recaptures);
         }
 
+    }
+
+    /**
+     * Add upstream sequences to fix indels caused by differing start calls.
+     *
+     * @param alignment		alignment to verify
+     */
+    private void checkUpstream(List<Sequence> alignment) {
+        // Loop through the alignment looking for an indel at the start.
+        List<Sequence> fronted = new ArrayList<Sequence>(alignment.size());
+        List<Sequence> full = new ArrayList<Sequence>(alignment.size());
+        for (Sequence seq : alignment) {
+            if (StringUtils.startsWith(seq.getSequence(), "-"))
+                fronted.add(seq);
+            else
+                full.add(seq);
+        }
+        // If we have both fronted and full, we should check the upstreams.
+        if (fronted.size() > 0 && full.size() > 0) {
+            // Loop through the fronted sequences.
+            for (Sequence frontedSeq : fronted) {
+                // What we do now is find the upstream sequence that corresponds to the indels at the front.  If it corresponds with
+                // the prefix of a full sequence, we plug it in.
+                int indelLength = StringUtils.indexOfAnyBut(frontedSeq.getSequence(), '-');
+                // Find the genome for this sequence.
+                Genome genome = this.genomeMap.get(Feature.genomeOf(frontedSeq.getLabel()));
+                // Compute the upstream sequence.
+                Location loc = Location.fromString(frontedSeq.getComment());
+                Location loc2 = loc.upstream(indelLength);
+                String upstream = genome.getDna(loc2);
+                if (upstream.length() == indelLength) {
+                    // Here we have a valid upstream region.  Search for it in the full sequences.
+                    boolean found = false;
+                    for (int i = 0; i < full.size() && ! found; i++) {
+                        Sequence fullSeq = full.get(i);
+                        if (StringUtils.startsWith(fullSeq.getSequence(), upstream))
+                            found = true;
+                    }
+                    if (found) {
+                        // We found a match, so update the fronted sequence.
+                        String tail = StringUtils.substring(frontedSeq.getSequence(), indelLength);
+                        frontedSeq.setSequence(upstream + tail);
+                        log.info("Upstream region added to {}.", frontedSeq.getLabel());
+                        // Update the location, too.
+                        int contigLen = genome.getContig(loc.getContigId()).length();
+                        loc2 = loc.expandUpstream(indelLength, contigLen);
+                        frontedSeq.setComment(loc2.toString());
+                        // Count the recapture.
+                        this.recaptures++;
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -165,6 +239,8 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
         Genome genome = new Genome(gtoFile);
         log.info("Scanning features from {}.", genome);
         this.baseGenome = genome;
+        if (this.upstreamCheck)
+            this.genomeMap.put(genome.getId(), genome);
         // Loop through the pegs.
         for (Feature feat : genome.getPegs()) {
             String function = feat.getFunction();

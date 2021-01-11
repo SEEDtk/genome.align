@@ -7,8 +7,9 @@ import org.theseed.utils.BaseProcessor;
 /**
  * Commands for Alignment-related utilities.
  *
- * gtos		align a list of GTOs and output the snips
- * genomes	align the genomes in a directory and output the snips
+ * gtos			align a list of GTOs and output the snips
+ * genomes		align the genomes in a directory and output the snips
+ * splice		align a genome with a reference genome to fill in the gaps
  *
  */
 public class App

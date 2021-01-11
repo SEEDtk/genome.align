@@ -51,7 +51,7 @@ public abstract class MultiAlignReporter extends BaseReporter {
      * Enum for report types
      */
     public static enum Type {
-            TEXT, HTML, SNIPS;
+            TEXT, HTML, SNIPS, INDELS;
 
         public MultiAlignReporter create(OutputStream outStream) {
             MultiAlignReporter retVal = null;
@@ -64,6 +64,10 @@ public abstract class MultiAlignReporter extends BaseReporter {
                 break;
             case SNIPS :
                 retVal = new SnipMultiAlignReporter(outStream);
+                break;
+            case INDELS :
+                retVal = new IndelMultiAlignReporter(outStream);
+                break;
             }
             return retVal;
         }
