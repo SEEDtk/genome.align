@@ -35,6 +35,13 @@ public abstract class MultiAlignReporter extends BaseReporter {
     public abstract void openReport(Genome genome, String[] altBases);
 
     /**
+     * Register a genome used in the report (optional).
+     *
+     * @param genome	genome to register
+     */
+    public void registerGenome(Genome genome) { }
+
+    /**
      * Output a particular alignment.
      *
      * @param title			name of the alignment

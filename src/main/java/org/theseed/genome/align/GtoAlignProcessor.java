@@ -115,34 +115,34 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
         this.functionMap = new FunctionMap();
         this.sequenceMap = new HashMap<String, SequenceList>(3000);
         this.recaptures = 0;
-        // Process the base genome to compute the functions of interest.
-        this.processBase(this.gtoBaseFile);
-        // Loop through the other genomes.
-        for (File gtoFile : this.gtoFiles) {
-            Genome genome = new Genome(gtoFile);
-            log.info("Scanning genome {}.", genome);
-            if (this.upstreamCheck)
-                this.genomeMap.put(genome.getId(), genome);
-            // Loop through the genome's pegs.
-            int kept = 0;
-            for (Feature feat : genome.getPegs()) {
-                // Get the function and look for a sequence list.
-                String function = feat.getFunction();
-                Function fun = this.functionMap.getByName(function);
-                if (fun != null) {
-                    SequenceList seqs = this.sequenceMap.get(fun.getId());
-                    if (seqs != null) {
-                        if (this.addFeature(seqs, feat))
-                            kept++;
-                    }
-                }
-            }
-            log.info("{} sequences kept from {}.", kept, genome);
-        }
-        // Process the alignments.
         try (MultiAlignReporter reporter = this.outputFormat.create(System.out)) {
+            // Process the base genome to compute the functions of interest.
+            this.processBase(this.gtoBaseFile);
             // Initialize the output report.
             reporter.openReport(this.baseGenome, this.altBases);
+            // Loop through the other genomes.
+            for (File gtoFile : this.gtoFiles) {
+                Genome genome = new Genome(gtoFile);
+                reporter.registerGenome(genome);
+                log.info("Scanning genome {}.", genome);
+                if (this.upstreamCheck)
+                    this.genomeMap.put(genome.getId(), genome);
+                // Loop through the genome's pegs.
+                int kept = 0;
+                for (Feature feat : genome.getPegs()) {
+                    // Get the function and look for a sequence list.
+                    String function = feat.getFunction();
+                    Function fun = this.functionMap.getByName(function);
+                    if (fun != null) {
+                        SequenceList seqs = this.sequenceMap.get(fun.getId());
+                        if (seqs != null) {
+                            if (this.addFeature(seqs, feat))
+                                kept++;
+                        }
+                    }
+                }
+                log.info("{} sequences kept from {}.", kept, genome);
+            }
             int alignCount = 0;
             // Loop through the alignments
             for (Map.Entry<String, SequenceList> alignRequest : this.sequenceMap.entrySet()) {
@@ -168,7 +168,6 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
             if (this.upstreamCheck)
                 log.info("{} upstream regions recaptured.", this.recaptures);
         }
-
     }
 
     /**
