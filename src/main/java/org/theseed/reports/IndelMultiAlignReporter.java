@@ -80,6 +80,8 @@ public class IndelMultiAlignReporter extends MultiAlignReporter {
                 else {
                     base = seq;
                     indelBase = StringUtils.contains(seq.getSequence(), MIN_INDEL);
+                    // Fix the indels at either end of the sequence.
+                    this.fixIndels(genomeId, seq);
                 }
             } else if (! this.altGenomeIds.contains(genomeId)) {
                 if (foundGenomes.contains(genomeId))
@@ -89,9 +91,9 @@ public class IndelMultiAlignReporter extends MultiAlignReporter {
                     if (StringUtils.contains(seq.getSequence(), MIN_INDEL))
                         indelCount++;
                     foundGenomes.add(genomeId);
+                    // Fix the indels at either end of the sequence.
+                    this.fixIndels(genomeId, seq);
                 }
-                // Fix the indels at either end of the sequence.
-                this.fixIndels(genomeId, seq);
             }
         }
         if (! dups && (indelBase && indelCount < aligned.size() || ! indelBase && indelCount > 0)) {
@@ -134,6 +136,8 @@ public class IndelMultiAlignReporter extends MultiAlignReporter {
             String dna = StringUtils.rightPad(genome.getDna(loc2), loc2.getLength(), '-');
             sequence = StringUtils.substring(sequence, 0, end + 1) + dna.toLowerCase();
         }
+        // Update the sequence.
+        seq.setSequence(sequence);
     }
 
     /**
