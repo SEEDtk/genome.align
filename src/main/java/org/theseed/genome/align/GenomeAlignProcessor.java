@@ -119,6 +119,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         this.sortOrder = HtmlSnipReporter.Sort.CHANGES;
         this.gFile = null;
         this.genomeIds = null;
+        this.maxUpstream = 100;
     }
 
     @Override

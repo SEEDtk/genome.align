@@ -88,6 +88,8 @@ public class HtmlSnipReporter extends SnipReporter {
         private Location loc;
         /** section title */
         private String title;
+        /** subsystem list */
+        private DomContent subsystems;
         /** section table */
         private HtmlTable<Key.Null> alignment;
 
@@ -102,6 +104,7 @@ public class HtmlSnipReporter extends SnipReporter {
             Feature feat = regions.get(0).getFeature();
             this.loc = feat.getLocation();
             this.title = title;
+            this.subsystems = CoreHtmlUtilities.subsystemList(feat);
             this.alignment = new HtmlTable<Key.Null>(HtmlSnipReporter.this.cols);
         }
 
@@ -127,7 +130,7 @@ public class HtmlSnipReporter extends SnipReporter {
          * @return the output for this table entry
          */
         public DomContent output() {
-            return div(h2(this.title), this.alignment.output());
+            return div(h2(this.title), this.subsystems, this.alignment.output());
         }
 
         /**
