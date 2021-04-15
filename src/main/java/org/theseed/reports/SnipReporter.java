@@ -54,6 +54,7 @@ public abstract class SnipReporter extends BaseReporter {
                 break;
             case HTML :
                 retVal = new HtmlSnipReporter(output, processor);
+                break;
             }
             return retVal;
         }

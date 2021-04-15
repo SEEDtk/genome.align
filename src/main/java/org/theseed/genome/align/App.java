@@ -10,6 +10,7 @@ import org.theseed.utils.BaseProcessor;
  * gtos			align a list of GTOs and output the snips
  * genomes		align the genomes in a directory and output the snips
  * splice		align a genome with a reference genome to fill in the gaps
+ * diff			compute the number of proteins in each of a set of genomes that differ from a base strain
  *
  */
 public class App
@@ -30,6 +31,9 @@ public class App
             break;
         case "splice" :
             processor = new SpliceProcessor();
+            break;
+        case "diff" :
+            processor = new DiffProcessor();
             break;
         default:
             throw new RuntimeException("Invalid command " + command);
