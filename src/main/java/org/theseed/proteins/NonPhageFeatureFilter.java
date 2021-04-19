@@ -3,6 +3,7 @@
  */
 package org.theseed.proteins;
 
+import org.apache.commons.lang3.StringUtils;
 import org.theseed.genome.Feature;
 
 /**
@@ -24,7 +25,7 @@ public class NonPhageFeatureFilter extends FeatureFilter {
     @Override
     public boolean filter(Feature feat) {
         String function = feat.getPegFunction();
-        return ! function.contains("phage");
+        return ! StringUtils.containsIgnoreCase(function, "phage");
     }
 
 }

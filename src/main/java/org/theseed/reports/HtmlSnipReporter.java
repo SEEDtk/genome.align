@@ -8,6 +8,7 @@ import static j2html.TagCreator.*;
 
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.theseed.web.HtmlTable;
 import org.theseed.web.Key;
 import org.theseed.web.Row;
 
+import j2html.tags.ContainerTag;
 import j2html.tags.DomContent;
 
 /**
@@ -58,6 +60,8 @@ public class HtmlSnipReporter extends SnipReporter {
     private Map<String, String> gNameMap;
     /** sorter to use for output */
     private Comparator<TableEntry> sorter;
+    /** controlling command processor */
+    private IParms processor;
     /** background color for snip differences */
     public static final Color DIFF_COLOR = new Color(0.50, 0.73, 1.0);
     /** style for snip differences */
@@ -90,6 +94,8 @@ public class HtmlSnipReporter extends SnipReporter {
         private String title;
         /** subsystem list */
         private DomContent subsystems;
+        /** group string */
+        private String groups;
         /** section table */
         private HtmlTable<Key.Null> alignment;
 
@@ -104,8 +110,13 @@ public class HtmlSnipReporter extends SnipReporter {
             Feature feat = regions.get(0).getFeature();
             this.loc = feat.getLocation();
             this.title = title;
-            this.subsystems = CoreHtmlUtilities.subsystemList(feat);
+            Collection<String> subsysList = feat.getSubsystems();
+            if (subsysList.isEmpty())
+                this.subsystems = null;
+            else
+                this.subsystems = CoreHtmlUtilities.subsystemList(subsysList);
             this.alignment = new HtmlTable<Key.Null>(HtmlSnipReporter.this.cols);
+            this.groups = HtmlSnipReporter.this.processor.getGroups(feat.getId());
         }
 
         /**
@@ -130,7 +141,12 @@ public class HtmlSnipReporter extends SnipReporter {
          * @return the output for this table entry
          */
         public DomContent output() {
-            return div(h2(this.title), this.subsystems, this.alignment.output());
+            ContainerTag modList = ul();
+            if (this.groups != null)
+                modList.with(li(this.groups));
+            if (this.subsystems != null)
+                modList.with(li(this.subsystems));
+            return div(h2(this.title), modList, this.alignment.output());
         }
 
         /**
@@ -205,7 +221,7 @@ public class HtmlSnipReporter extends SnipReporter {
     public HtmlSnipReporter(OutputStream output, IParms processor) {
         super(output);
         // Create the HTML writer.
-        this.writer = new FreePageWriter();
+        this.writer = new FreePageWriter(this.getWriter());
         // Get the cell width.
         this.cellWidth = processor.getCellWidth();
         // Create the genome map.
@@ -214,6 +230,8 @@ public class HtmlSnipReporter extends SnipReporter {
         this.sections = new ArrayList<TableEntry>(1000);
         // Create the output sorter.
         this.sorter = processor.getSort().create();
+        // Save the command processor.
+        this.processor = processor;
     }
 
     @Override

@@ -5,11 +5,17 @@ package org.theseed.genome.align;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+
+import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
@@ -45,12 +51,15 @@ import org.theseed.utils.ParseFailureException;
  * -K	kmer size for computing distances
  * -u	maximum upstream distance for protein regions
  * -w	maximum cell character width for HTML tables
+ * -o	output file (if not STDOUT)
  *
  * --filter		types of filters; features that fail the filter will not be added to the pending alignments
  * --format		output report format
  * --workDir	working directory name; the default is "Temp" in the current directory
  * --sort		sort order for HTML output
  * --gFile		file containing a list of genome IDs, used to determine the order of the output columns
+ * --groups		name of a tab-delimited file containing group membership information (modulons, subsystems)
+ * 				for the base genome features
  *
  * @author Bruce Parrello
  *
@@ -64,14 +73,16 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     private FunctionMap funMap;
     /** list of regions to align by base genome feature */
     private Map<Feature, MarkedRegionList> alignMap;
-    /** reporting object */
-    private SnipReporter reporter;
     /** ID of the base genome */
     private String baseId;
     /** list of filters */
     private List<FeatureFilter> filters;
     /** genome ID reordering list */
     private List<String> genomeIds;
+    /** map of feature IDs to group descriptors */
+    private Map<String, String> groupMap;
+    /** output stream */
+    private OutputStream outStream;
 
     // COMMAND-LINE OPTIONS
 
@@ -99,6 +110,14 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     @Option(name = "--gFile", metaVar = "genomeIDs.txt", usage = "file of genome IDs specifying the output column order")
     private File gFile;
 
+    /** file of grouping information */
+    @Option(name = "--groups", metaVar = "groups.tbl", usage = "file of group information by genome ID")
+    private File groupFile;
+
+    /** output file (if not STDOUT) */
+    @Option(name = "-o", aliases = { "--output" }, metaVar = "outFile.html", usage = "output file (if not STDOUT)")
+    private File outFile;
+
     /** input genome directory */
     @Argument(index = 0, metaVar = "inDir", usage = "input genome directory", required = true)
     private File inDir;
@@ -120,6 +139,8 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         this.gFile = null;
         this.genomeIds = null;
         this.maxUpstream = 100;
+        this.groupFile = null;
+        this.outFile = null;
     }
 
     @Override
@@ -133,8 +154,6 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         // Verify the base genome.
         if (! this.baseGto.canRead())
             throw new FileNotFoundException("Base genome file " + this.baseGto + " not found or unreadable.");
-        // Create the report object.
-        this.reporter = this.outputFormat.create(System.out, this);
         // Create the filter list.
         this.filters = new ArrayList<FeatureFilter>(this.filterTypes.size());
         for (FeatureFilter.Type filterType : this.filterTypes)
@@ -150,43 +169,79 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                 log.info("{} genome IDs read from ordering file {}.", this.genomeIds.size(), this.gFile);
             }
         }
+        // Create the group map (if any).
+        if (this.groupFile == null)
+            this.groupMap = Collections.emptyMap();
+        else {
+            if (! this.groupFile.canRead())
+                throw new FileNotFoundException("Group file " + this.groupFile + " not found or unreadable.");
+            this.groupMap = new HashMap<String, String>(1000);
+            try (TabbedLineReader gStream = new TabbedLineReader(this.groupFile)) {
+                for (TabbedLineReader.Line line : gStream) {
+                    String fid = line.get(0);
+                    // Here we build the description string for the feature.
+                    StringBuilder description = new StringBuilder(100);
+                    int arNum = line.getInt(2);
+                    description.append(String.format("Groups: AR%d", arNum));
+                    String mods = line.get(1);
+                    if (! mods.isEmpty())
+                        description.append("; Modulons " + StringUtils.replace(mods, ",", ", "));
+                    this.groupMap.put(fid, description.toString());
+                }
+            }
+            log.info("{} group records read from {}.", this.groupMap.size(), this.groupFile);
+        }
+        // Connect to the output file.
+        if (this.outFile == null) {
+            log.info("Results will be written to the standard output.");
+            this.outStream = System.out;
+        } else {
+            log.info("Results will be written to {}.", this.outFile);
+            this.outStream = new FileOutputStream(this.outFile);
+        }
+
+
     }
 
     @Override
     protected void runCommand() throws Exception {
-        // Create the function map.
-        this.funMap = new FunctionMap();
-        // Create the region list map.  It is keyed by feature with sorting by location, so the output is in chromosome order.
-        this.alignMap = new TreeMap<Feature, MarkedRegionList>(new Feature.LocationComparator());
-        // Build all the alignment lists.
-        this.buildAlignments();
-        // Fix the ordering (if necessary).
-        if (this.genomeIds != null)
-            this.reporter.reorder(this.genomeIds);
-        // Denote we are done registering genomes.
-        this.reporter.initializeOutput();
-        // Create our temporary file.
-        File tempFile = File.createTempFile("align", ".fa", this.getWorkDir());
-        tempFile.deleteOnExit();
-        // Loop through the alignments.
-        log.info("Processing alignments.");
-        for (Map.Entry<Feature, MarkedRegionList> alignEntry : this.alignMap.entrySet()) {
-            MarkedRegionList regions = alignEntry.getValue();
-            // We only align these regions if at least one has a functional difference.
-            if (regions.getCounter() > 0) {
-                // Here we have enough data to do an alignment.
-                Feature feat = alignEntry.getKey();
-                log.info("Performing alignment on {}.", feat);
-                regions.save(tempFile);
-                ClustalPipeline aligner = new ClustalPipeline(tempFile);
-                List<Sequence> alignment = aligner.run();
-                // Output the alignment.
-                this.reporter.processAlignment(feat.getFunction(), regions, alignment);
+        try (SnipReporter reporter = this.outputFormat.create(this.outStream, this)) {
+            // Create the function map.
+            this.funMap = new FunctionMap();
+            // Create the region list map.  It is keyed by feature with sorting by location, so the output is in chromosome order.
+            this.alignMap = new TreeMap<Feature, MarkedRegionList>(new Feature.LocationComparator());
+            // Build all the alignment lists.
+            this.buildAlignments(reporter);
+            // Fix the ordering (if necessary).
+            if (this.genomeIds != null)
+                reporter.reorder(this.genomeIds);
+            // Denote we are done registering genomes.
+            reporter.initializeOutput();
+            // Create our temporary file.
+            File tempFile = File.createTempFile("align", ".fa", this.getWorkDir());
+            tempFile.deleteOnExit();
+            // Loop through the alignments.
+            log.info("Processing alignments.");
+            for (Map.Entry<Feature, MarkedRegionList> alignEntry : this.alignMap.entrySet()) {
+                MarkedRegionList regions = alignEntry.getValue();
+                // We only align these regions if at least one has a functional difference.
+                if (regions.getCounter() > 0) {
+                    // Here we have enough data to do an alignment.
+                    Feature feat = alignEntry.getKey();
+                    log.info("Performing alignment on {}.", feat);
+                    regions.save(tempFile);
+                    ClustalPipeline aligner = new ClustalPipeline(tempFile);
+                    List<Sequence> alignment = aligner.run();
+                    // Output the alignment.
+                    reporter.processAlignment(feat.getFunction(), regions, alignment);
+                }
             }
+            // Finish the report.
+            reporter.finishReport();
+        } finally {
+            if (this.outFile != null)
+                this.outStream.close();
         }
-        // Finish the report.
-        this.reporter.finishReport();
-        this.reporter.close();
     }
 
     /**
@@ -194,7 +249,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
      *
      * @throws IOException
      */
-    private void buildAlignments() throws IOException {
+    private void buildAlignments(SnipReporter reporter) throws IOException {
         // Read in the base genome and sort the regions by function.  When we process the other genomes, we will use the
         // function-to-region map to find the best feature for alignment.
         Genome base = new Genome(this.baseGto);
@@ -212,7 +267,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         }
         log.info("{} features with {} functions processed for base genome.", this.alignMap.size(), baseMap.size());
         // Register the base genome for the report.
-        this.reporter.register(base);
+        reporter.register(base);
         // Now read the other genomes.  If we find the base, we skip it.
         log.info("Scanning input directory {}.", this.inDir);
         GenomeDirectory genomes = new GenomeDirectory(this.inDir);
@@ -225,7 +280,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                 // non-wilds are output.
                 boolean wild = this.altIds.contains(genome.getId());
                 if (! wild)
-                    this.reporter.register(genome);
+                    reporter.register(genome);
                 // Process the regions for this genome.
                 int foundCount = 0;
                 int badFunCount = 0;
@@ -296,5 +351,12 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     public Sort getSort() {
         return this.sortOrder;
     }
+
+    @Override
+    public String getGroups(String fid) {
+        return this.groupMap.get(fid);
+    }
+
+
 
 }

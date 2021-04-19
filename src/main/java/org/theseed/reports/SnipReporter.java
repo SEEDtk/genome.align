@@ -75,6 +75,13 @@ public abstract class SnipReporter extends BaseReporter {
          */
         HtmlSnipReporter.Sort getSort();
 
+        /**
+         * @return the group string for the specified feature, or NULL if it is not in a group
+         *
+         * @param fid	feature of interest
+         */
+        String getGroups(String fid);
+
     }
 
     /**
@@ -201,6 +208,7 @@ public abstract class SnipReporter extends BaseReporter {
      */
     public void finishReport() {
         this.closeReport();
+        this.getWriter().flush();
     }
 
 }
