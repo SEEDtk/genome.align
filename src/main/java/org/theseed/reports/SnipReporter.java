@@ -3,13 +3,21 @@
  */
 package org.theseed.reports;
 
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.OutputStream;
+import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.theseed.genome.Feature;
@@ -23,6 +31,9 @@ import org.theseed.sequence.clustal.SnipIterator;
  * This is the base class for snip reports.  The snip report presumes a multiple-sequence alignment involving a base genome and a fixed set of aligned genomes.
  * Numerous alignments will be processed, each based on a single base genome feature and its upstream region.
  *
+ * This method is also responsible for writing the feature data output file, which indicates which genomes have significant snips
+ * in each feature.
+ *
  * @author Bruce Parrello
  *
  */
@@ -33,6 +44,13 @@ public abstract class SnipReporter extends BaseReporter {
     protected static Logger log = LoggerFactory.getLogger(SnipReporter.class);
     /** IDs of the aligned genomes */
     private List<String> genomeIds;
+    /** feature data output file */
+    private PrintWriter fDataOut;
+    /** controlling processor */
+    private IParms processor;
+    /** map of genome IDs to names */
+    private Map<String, String> gNameMap;
+
 
     /**
      * Enum for different report formats
@@ -76,24 +94,39 @@ public abstract class SnipReporter extends BaseReporter {
         HtmlSnipReporter.Sort getSort();
 
         /**
-         * @return the group string for the specified feature, or NULL if it is not in a group
+         * @return the group list for the specified feature, or NULL if it is not in a group
          *
          * @param fid	feature of interest
          */
-        String getGroups(String fid);
+        List<String> getGroups(String fid);
 
     }
 
     /**
      * Create a snip report on a specified output stream.
      *
-     * @param output	output stream to receive the report
+     * @param output		output stream to receive the report
+     * @param processor		controlling command processor
      */
-    public SnipReporter(OutputStream output) {
+    public SnipReporter(OutputStream output, IParms processor) {
         super(output);
         this.genomeIds = new ArrayList<String>();
+        this.fDataOut = null;
+        this.processor = processor;
+        // Create the genome map.
+        this.gNameMap = new HashMap<String, String>();
     }
 
+    /**
+     * Register the feature data output file.
+     *
+     * @param	outFile		feature data output file
+     *
+     * @throws FileNotFoundException
+     */
+    public void setupFeatureOutput(File outFile) throws FileNotFoundException {
+        this.fDataOut = new PrintWriter(outFile);
+    }
     /**
      * Register an aligned genome.
      *
@@ -101,6 +134,7 @@ public abstract class SnipReporter extends BaseReporter {
      */
     public void register(Genome genome) {
         this.genomeIds.add(genome.getId());
+        this.gNameMap.put(genome.getId(), genome.getName());
         this.registerGenome(genome);
     }
 
@@ -133,6 +167,12 @@ public abstract class SnipReporter extends BaseReporter {
         }
         // Now add the residual.
         this.genomeIds.addAll(oldGenomes);
+        // Write the names to the feature-data output.
+        if (this.fDataOut != null) {
+            for (String genomeId : this.genomeIds)
+                this.fDataOut.println(genomeId + "\t" + this.getGName(genomeId));
+            this.fDataOut.println("//");
+        }
     }
 
     /**
@@ -152,12 +192,14 @@ public abstract class SnipReporter extends BaseReporter {
     /**
      * Process an alignment.
      *
+     * @param feat			base genome feature
      * @param regions		list of regions that were aligned
      * @param alignment		list of aligned sequences
      */
-    public void processAlignment(String title, RegionList regions, List<Sequence> alignment) {
+    public void processAlignment(Feature feat, RegionList regions, List<Sequence> alignment) {
         // Start this section of the report.
-        this.openAlignment(title, regions);
+        String function = feat.getPegFunction();
+        this.openAlignment(function, regions);
         // We need to compute the wild strain genomes.  The first region is a wild genome, and all sequences
         // in the alignment that are not in the main genome ID list are wild as well.  Note the the wild set
         // may change between alignments if a wild strain is missing a region in this alignment run.
@@ -168,12 +210,31 @@ public abstract class SnipReporter extends BaseReporter {
         regions.stream().map(x -> Feature.genomeOf(x.getLabel())).filter(g -> ! this.genomeIds.contains(g)).forEach(g -> wildSet.add(g));
         // Now we need to iterate through the snips.
         SnipIterator.Run snipRun = new SnipIterator.Run(regions, alignment, wildSet, this.genomeIds);
+        // This will track the genomes that have significant snips.
+        BitSet modifiedGenomes = new BitSet(this.genomeIds.size());
         int count = 0;
         for (SnipColumn snipCol : snipRun) {
             this.processSnips(snipCol);
+            String baseChars = snipCol.getSnip(0);
+            for (int i = 1; i < snipCol.getRows(); i++)
+                modifiedGenomes.set(i, snipCol.isSignificant(i) && ! snipCol.getSnip(i).contentEquals(baseChars));
             count++;
         }
-        log.debug("{} snips found in alignment for {}.", count, title);
+        String fid = feat.getId();
+        log.debug("{} snips found in alignment for {}.", count, fid);
+        if (this.fDataOut != null) {
+            // Here we need to update the featureData file.
+            String flags = IntStream.range(0, this.genomeIds.size()).mapToObj(i -> (modifiedGenomes.get(i) ? "X" : ""))
+                    .collect(Collectors.joining("\t"));
+            List<String> groupList = new ArrayList<String>();
+            List<String> mainList = this.processor.getGroups(fid);
+            if (mainList != null)
+                groupList.addAll(mainList);
+            List<String> others = this.getOtherGroups(fid);
+            if (others != null)
+                groupList.addAll(others);
+            this.fDataOut.format("%s\t%s\t%s%n", fid, StringUtils.join(groupList, ","), flags);
+        }
         // Finish off the alignment.
         this.closeAlignment();
     }
@@ -203,12 +264,36 @@ public abstract class SnipReporter extends BaseReporter {
      */
     protected abstract void closeReport();
 
-    /**
-     *
-     */
     public void finishReport() {
         this.closeReport();
         this.getWriter().flush();
+        if (this.fDataOut != null)
+            this.fDataOut.close();
+    }
+
+    /**
+     * @return the processor
+     */
+    public IParms getProcessor() {
+        return processor;
+    }
+
+    /**
+     * @return the name of the specified genome
+     *
+     * @param id	ID of genome whose name is desired
+     */
+    public String getGName(String id) {
+        return this.gNameMap.get(id);
+    }
+
+    /**
+     * @return a list of additional groups, or NULL if there are none
+     *
+     * This must be overridden by the subclass to return anything.
+     */
+    protected List<String> getOtherGroups(String fid) {
+        return null;
     }
 
 }

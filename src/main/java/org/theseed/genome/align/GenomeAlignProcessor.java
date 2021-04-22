@@ -9,6 +9,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -80,7 +81,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     /** genome ID reordering list */
     private List<String> genomeIds;
     /** map of feature IDs to group descriptors */
-    private Map<String, String> groupMap;
+    private Map<String, List<String>> groupMap;
     /** output stream */
     private OutputStream outStream;
 
@@ -111,8 +112,12 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     private File gFile;
 
     /** file of grouping information */
-    @Option(name = "--groups", metaVar = "groups.tbl", usage = "file of group information by genome ID")
+    @Option(name = "--groups", metaVar = "groups.tbl", usage = "file of group information by feature ID")
     private File groupFile;
+
+    /** grouping output file */
+    @Option(name = "--groupOut", metaVar = "groups.snips.tbl", usage = "output file for group snip information")
+    private File groupOutFile;
 
     /** output file (if not STDOUT) */
     @Option(name = "-o", aliases = { "--output" }, metaVar = "outFile.html", usage = "output file (if not STDOUT)")
@@ -141,6 +146,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         this.maxUpstream = 100;
         this.groupFile = null;
         this.outFile = null;
+        this.groupOutFile = null;
     }
 
     @Override
@@ -175,18 +181,18 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         else {
             if (! this.groupFile.canRead())
                 throw new FileNotFoundException("Group file " + this.groupFile + " not found or unreadable.");
-            this.groupMap = new HashMap<String, String>(1000);
+            this.groupMap = new HashMap<String, List<String>>(1000);
             try (TabbedLineReader gStream = new TabbedLineReader(this.groupFile)) {
                 for (TabbedLineReader.Line line : gStream) {
                     String fid = line.get(0);
                     // Here we build the description string for the feature.
-                    StringBuilder description = new StringBuilder(100);
+                    List<String> groupList = new ArrayList<String>(10);
                     int arNum = line.getInt(2);
-                    description.append(String.format("Groups: AR%d", arNum));
+                    groupList.add(String.format("AR%d", arNum));
                     String mods = line.get(1);
                     if (! mods.isEmpty())
-                        description.append("; Modulons " + StringUtils.replace(mods, ",", ", "));
-                    this.groupMap.put(fid, description.toString());
+                        groupList.addAll(Arrays.asList(StringUtils.split(mods, ",")));
+                    this.groupMap.put(fid, groupList);
                 }
             }
             log.info("{} group records read from {}.", this.groupMap.size(), this.groupFile);
@@ -210,6 +216,9 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
             this.funMap = new FunctionMap();
             // Create the region list map.  It is keyed by feature with sorting by location, so the output is in chromosome order.
             this.alignMap = new TreeMap<Feature, MarkedRegionList>(new Feature.LocationComparator());
+            // Set up the group output file, if any.
+            if (this.groupOutFile != null)
+                reporter.setupFeatureOutput(this.groupOutFile);
             // Build all the alignment lists.
             this.buildAlignments(reporter);
             // Fix the ordering (if necessary).
@@ -233,7 +242,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                     ClustalPipeline aligner = new ClustalPipeline(tempFile);
                     List<Sequence> alignment = aligner.run();
                     // Output the alignment.
-                    reporter.processAlignment(feat.getFunction(), regions, alignment);
+                    reporter.processAlignment(feat, regions, alignment);
                 }
             }
             // Finish the report.
@@ -353,7 +362,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     }
 
     @Override
-    public String getGroups(String fid) {
+    public List<String> getGroups(String fid) {
         return this.groupMap.get(fid);
     }
 

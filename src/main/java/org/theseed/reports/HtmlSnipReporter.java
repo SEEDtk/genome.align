@@ -13,10 +13,14 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+
 import org.apache.commons.lang3.StringUtils;
 import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
 import org.theseed.locations.Location;
+import org.theseed.magic.MagicMap;
+import org.theseed.magic.MagicObject;
 import org.theseed.sequence.ExtendedProteinRegion;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.clustal.RealSnipItem;
@@ -56,12 +60,12 @@ public class HtmlSnipReporter extends SnipReporter {
     private BitSet diffs;
     /** current region list */
     private RegionList regions;
-    /** map of genome IDs to names */
-    private Map<String, String> gNameMap;
     /** sorter to use for output */
     private Comparator<TableEntry> sorter;
-    /** controlling command processor */
-    private IParms processor;
+    /** subsystem ID map */
+    private MagicMap<Subsystem> subMap;
+    /** map of feature IDs to subsystem IDs */
+    private Map<String, List<String>> fidSubMap;
     /** background color for snip differences */
     public static final Color DIFF_COLOR = new Color(0.50, 0.73, 1.0);
     /** style for snip differences */
@@ -80,6 +84,41 @@ public class HtmlSnipReporter extends SnipReporter {
     public static final String GAP_STYLE = "background-color: " + GAP_COLOR.html();
     /** HTML encoding for a hard break */
     private static final String BREAK_RENDER = br().render();
+    /** location of the group page */
+    private static final String GROUP_URL = "http://core.theseed.org/SEEDtk/rna.cgi/groups?group=";
+
+    /**
+     * Utility class for tracking subsystem links.
+     */
+    private static class Subsystem extends MagicObject {
+
+        /** serialization ID */
+        private static final long serialVersionUID = 6147612938895322808L;
+
+        /**
+         * Construct a subsystem object from a subsystem name.
+         *
+         * @param name	subsystem name
+         */
+        public Subsystem(String name) {
+            super(null, name);
+        }
+
+        @Override
+        protected String normalize() {
+            return this.getName();
+        }
+
+        /**
+         * @return a link to the subsystem group page
+         */
+        public DomContent getLink() {
+            String title = LinkObject.Core.cleanSubsystemName(this.getName());
+            DomContent retVal = a(this.getName()).withHref(GROUP_URL + this.getId() + ";title=" + title).withTarget("_blank");
+            return retVal;
+        }
+
+    }
 
     /**
      * Utility class for sorting the output by number of differences.
@@ -92,10 +131,12 @@ public class HtmlSnipReporter extends SnipReporter {
         private Location loc;
         /** section title */
         private String title;
+        /** title link */
+        private DomContent titleLink;
         /** subsystem list */
         private DomContent subsystems;
-        /** group string */
-        private String groups;
+        /** group list */
+        private List<String> groups;
         /** section table */
         private HtmlTable<Key.Null> alignment;
 
@@ -110,13 +151,31 @@ public class HtmlSnipReporter extends SnipReporter {
             Feature feat = regions.get(0).getFeature();
             this.loc = feat.getLocation();
             this.title = title;
+            this.titleLink = feat.getParent().getLinker().featureLink(feat.getId(), text(title));
             Collection<String> subsysList = feat.getSubsystems();
-            if (subsysList.isEmpty())
+            if (subsysList.isEmpty()) {
                 this.subsystems = null;
-            else
-                this.subsystems = CoreHtmlUtilities.subsystemList(subsysList);
+            } else {
+                // This is very complicated.  We need to create a bunch of subsystem links and we need
+                // the subsystem IDs for both the links and for eventual output to the groups file.
+                List<String> subIds = new ArrayList<String>(subsysList.size());
+                List<Subsystem> subsToLink = new ArrayList<Subsystem>(subsysList.size());
+                for (String subsysName : subsysList) {
+                    Subsystem sub = HtmlSnipReporter.this.subMap.getByName(subsysName);
+                    if (sub == null) {
+                        sub = new Subsystem(subsysName);
+                        HtmlSnipReporter.this.subMap.put(sub);
+                    }
+                    subIds.add(sub.getId());
+                    subsToLink.add(sub);
+                }
+                // Create the hyperlinked display string for the subsystems.
+                this.subsystems = HtmlSnipReporter.this.subsystemList(subsToLink);
+                // Save the subsystem ID list so the base class can put it in the group file.
+                HtmlSnipReporter.this.fidSubMap.put(feat.getId(), subIds);
+            }
             this.alignment = new HtmlTable<Key.Null>(HtmlSnipReporter.this.cols);
-            this.groups = HtmlSnipReporter.this.processor.getGroups(feat.getId());
+            this.groups = HtmlSnipReporter.this.getProcessor().getGroups(feat.getId());
         }
 
         /**
@@ -125,7 +184,7 @@ public class HtmlSnipReporter extends SnipReporter {
          * @param locString		location string for the snip in this row
          * @param row			row of snip HTML strings to add
          */
-        public void addRow(String locString, List<DomContent> row) {
+        public void addRow(DomContent locString, List<DomContent> row) {
             Row<Key.Null> trow = new Row<Key.Null>(this.alignment, Key.NONE).add(locString);
             row.stream().forEach(x -> trow.add(x));
         }
@@ -143,10 +202,10 @@ public class HtmlSnipReporter extends SnipReporter {
         public DomContent output() {
             ContainerTag modList = ul();
             if (this.groups != null)
-                modList.with(li(this.groups));
+                modList.with(li(createGroupLinks(this.groups)));
             if (this.subsystems != null)
                 modList.with(li(this.subsystems));
-            return div(h2(this.title), modList, this.alignment.output());
+            return div(h2(this.titleLink), modList, this.alignment.output());
         }
 
         /**
@@ -219,24 +278,44 @@ public class HtmlSnipReporter extends SnipReporter {
 
 
     public HtmlSnipReporter(OutputStream output, IParms processor) {
-        super(output);
+        super(output, processor);
         // Create the HTML writer.
         this.writer = new FreePageWriter(this.getWriter());
         // Get the cell width.
         this.cellWidth = processor.getCellWidth();
-        // Create the genome map.
-        this.gNameMap = new HashMap<String, String>();
         // Create the table list.
         this.sections = new ArrayList<TableEntry>(1000);
         // Create the output sorter.
         this.sorter = processor.getSort().create();
-        // Save the command processor.
-        this.processor = processor;
+        // Create the subsystem maps.
+        this.subMap = new MagicMap<Subsystem>(new Subsystem(""));
+        this.fidSubMap = new HashMap<String, List<String>>(1000);
+    }
+
+    /**
+     * @return a list of subsystem links for the specified subsystems
+     *
+     * @param subsToLink	list of subsystems
+     */
+    public DomContent subsystemList(List<Subsystem> subsToLink) {
+        return HtmlUtilities.joinDelimited(subsToLink.stream().map(x -> x.getLink()).collect(Collectors.toList()), " | ");
+    }
+
+    /**
+     * Create a list of groups linked to the appropriate group display pages
+     *
+     * @param groups	list of groups for the current feature
+     *
+     * @return a comma-delimited list of hyperlinks for the groups containing the current feature
+     */
+    public DomContent createGroupLinks(List<String> groups) {
+        DomContent retVal = HtmlUtilities.joinDelimited(groups.stream()
+                .map(x -> a(x).withHref(GROUP_URL + x).withTarget("_blank")), ", ");
+        return retVal;
     }
 
     @Override
     protected void registerGenome(Genome genome) {
-        this.gNameMap.put(genome.getId(), genome.getName());
     }
 
     @Override
@@ -245,7 +324,7 @@ public class HtmlSnipReporter extends SnipReporter {
         this.genomeIds = genomeIdList;
         List<ColSpec> colSpecs = new ArrayList<ColSpec>(this.genomeIds.size() + 1);
         colSpecs.add(new ColSpec.Normal("Location"));
-        this.genomeIds.stream().forEach(x -> colSpecs.add(new ColSpec.Aligned(x).setTip(this.gNameMap.get(x))));
+        this.genomeIds.stream().forEach(x -> colSpecs.add(new ColSpec.Aligned(x).setTip(this.getGName(x))));
         ColSpec[] cols = new ColSpec[colSpecs.size()];
         this.cols = colSpecs.toArray(cols);
         // Create the difference bitmap.
@@ -272,6 +351,7 @@ public class HtmlSnipReporter extends SnipReporter {
         // Get the base-sequence snip.
         String baseSnip = snipCol.getSnip(0).toUpperCase();
         ExtendedProteinRegion baseRegion = this.regions.get(0);
+        Feature baseFeat = baseRegion.getFeature();
         String[] baseAA = ((RealSnipItem) snipCol.getItem(0)).getProteinMap(baseRegion);
         // Our prototype cells go in here.
         List<DomContent> row = new ArrayList<DomContent>(snipCol.getRows());
@@ -331,9 +411,17 @@ public class HtmlSnipReporter extends SnipReporter {
                 row.add(rawHtml(buffer.toString()));
             }
         }
-        // Only add the row if we found one visible difference.
+        // Only add the row if we found a visible difference.
         if (diffCount > 0) {
-            this.table.addRow(snipCol.getLocString(0), row);
+            // Determine if this is an upstream or instream snip.
+            DomContent label;
+            String labelString = snipCol.getLocString(0);
+            Location snipLoc = snipCol.getLoc(0);
+            if (snipLoc.isOverlapping(baseFeat.getLocation()))
+                label = b(labelString);
+            else
+                label = i(labelString);
+            this.table.addRow(label, row);
         }
     }
 
@@ -386,4 +474,8 @@ public class HtmlSnipReporter extends SnipReporter {
         this.writer.writePage("Snip Alignments", h1("Snip Alignments"), block);
     }
 
+    @Override
+    protected List<String> getOtherGroups(String fid) {
+        return this.fidSubMap.get(fid);
+    }
 }

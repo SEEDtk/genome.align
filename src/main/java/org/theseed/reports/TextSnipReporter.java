@@ -26,7 +26,7 @@ public class TextSnipReporter extends SnipReporter {
     private StringBuilder buffer;
 
     public TextSnipReporter(OutputStream output, IParms processor) {
-        super(output);
+        super(output, processor);
         this.buffer = new StringBuilder(100);
     }
 
