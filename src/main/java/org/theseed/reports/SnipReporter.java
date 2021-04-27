@@ -8,7 +8,7 @@ import java.io.FileNotFoundException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.BitSet;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,8 +22,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
+import org.theseed.sequence.ExtendedProteinRegion;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.Sequence;
+import org.theseed.sequence.clustal.ISnipItem;
 import org.theseed.sequence.clustal.SnipColumn;
 import org.theseed.sequence.clustal.SnipIterator;
 
@@ -211,20 +213,21 @@ public abstract class SnipReporter extends BaseReporter {
         // Now we need to iterate through the snips.
         SnipIterator.Run snipRun = new SnipIterator.Run(regions, alignment, wildSet, this.genomeIds);
         // This will track the genomes that have significant snips.
-        BitSet modifiedGenomes = new BitSet(this.genomeIds.size());
+        String[] modifiedGenomes = new String[this.genomeIds.size()];
+        Arrays.fill(modifiedGenomes, "");
         int count = 0;
         for (SnipColumn snipCol : snipRun) {
             this.processSnips(snipCol);
             String baseChars = snipCol.getSnip(0);
             for (int i = 1; i < snipCol.getRows(); i++)
-                modifiedGenomes.set(i, snipCol.isSignificant(i) && ! snipCol.getSnip(i).contentEquals(baseChars));
+                modifiedGenomes[i] = this.charCode(snipCol.getItem(i), regions.get(snipCol.getFid(i)), baseChars, modifiedGenomes[i]);
             count++;
         }
         String fid = feat.getId();
         log.debug("{} snips found in alignment for {}.", count, fid);
         if (this.fDataOut != null) {
             // Here we need to update the featureData file.
-            String flags = IntStream.range(0, this.genomeIds.size()).mapToObj(i -> (modifiedGenomes.get(i) ? "X" : ""))
+            String flags = IntStream.range(0, this.genomeIds.size()).mapToObj(i -> modifiedGenomes[i])
                     .collect(Collectors.joining("\t"));
             List<String> groupList = new ArrayList<String>();
             List<String> mainList = this.processor.getGroups(fid);
@@ -237,6 +240,33 @@ public abstract class SnipReporter extends BaseReporter {
         }
         // Finish off the alignment.
         this.closeAlignment();
+    }
+
+    /**
+     * @return the character display code for this type of snip
+     *
+     * @param snip			snip item to check
+     * @param region		region containing the snip (or NULL if virtual)
+     * @param baseChars		base genome sequence for this snip
+     * @param original		original display code for this snip
+     */
+    private String charCode(ISnipItem snip, ExtendedProteinRegion region, String baseChars, String original) {
+        String retVal = original;
+        // A character code of "D" overrides everything else.  Also, if this change is not
+        // significant, we skip it.
+        if (snip.isSignificant() && ! original.contentEquals("D")) {
+            // Here we want to look for "D" (gap) or "M" (change).
+            String snipString = snip.getChars();
+            if (snip.isReal(baseChars, region)) {
+                // This snip is a change from the base.  Check for an edge condition.
+
+                if (snipString.contains("-"))
+                    retVal = "D";
+                else
+                    retVal = "M";
+            }
+        }
+        return retVal;
     }
 
     /**

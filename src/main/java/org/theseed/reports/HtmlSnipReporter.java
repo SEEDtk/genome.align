@@ -82,6 +82,10 @@ public class HtmlSnipReporter extends SnipReporter {
     public static final Color GAP_COLOR = new Color(1.0, 1.0, 0.0);
     /** style for a gap change */
     public static final String GAP_STYLE = "background-color: " + GAP_COLOR.html();
+    /** background color for a gap off the edge of the contig */
+    private static final Color EDGE_COLOR = new Color(1.0, 0.73, 0.73);
+    /** style for a gap off the edge of the contig */
+    public static final String EDGE_STYLE = "background-color: " + EDGE_COLOR.html();
     /** HTML encoding for a hard break */
     private static final String BREAK_RENDER = br().render();
     /** location of the group page */
@@ -369,6 +373,8 @@ public class HtmlSnipReporter extends SnipReporter {
                 // Prepare the output buffer.
                 buffer.setLength(0);
                 int width = 0;
+                // This tracks our real region offset.
+                int regionOffset = snipCol.getOffset(i);
                 // Insert the snip letters, coloring each one that differs from the base.
                 for (int p = 0; p < snipCol.getWidth(); p++) {
                     char c = snip.charAt(p);
@@ -380,7 +386,11 @@ public class HtmlSnipReporter extends SnipReporter {
                     if (c == cBase)
                         buffer.append(c);
                     else if (c == '-' || cBase == '-') {
-                        buffer.append(markedLetter(c, GAP_STYLE).render());
+                        String style = GAP_STYLE;
+                        // Check for a virtual location, indicating the difference is edge-related.
+                        if (c == '-' && region.isVirtual(regionOffset))
+                            style = EDGE_STYLE;
+                        buffer.append(markedLetter(c, style).render());
                         diffCount++;
                         this.diffs.set(i);
                     } else {
@@ -405,6 +415,7 @@ public class HtmlSnipReporter extends SnipReporter {
                             }
                         }
                     }
+                    if (c != '-') regionOffset++;
                     width++;
                 }
                 // Create the cell with the snip in it.
@@ -467,7 +478,8 @@ public class HtmlSnipReporter extends SnipReporter {
         // Form the tables into a page.
         DomContent legend = p(text("Color scheme: "), span("Upstream difference. ").withStyle(UPSTREAM_STYLE),
                 span("Gap-related difference. ").withStyle(GAP_STYLE), span("Invisible difference. ").withStyle(INVISI_STYLE),
-                span("Protein-modifying difference.").withStyle(DIFF_STYLE));
+                span("Protein-modifying difference. ").withStyle(DIFF_STYLE),
+                span("Contig edge difference. ").withStyle(EDGE_STYLE));
         this.sections.sort(this.sorter);
         DomContent tables = div().with(this.sections.stream().map(x -> x.output()));
         DomContent block = this.writer.highlightBlock(legend, tables);
