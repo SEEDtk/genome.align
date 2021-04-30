@@ -32,7 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This report lists genes that have protein-modifying changes across all genomes in the special subset.
+ * This report lists genes that have modifying changes across all genomes in the special subset.
  * The output is in Excel format.  The columns of the sheet are as follows:
  *
  * 		fig ID			feature ID
@@ -47,7 +47,7 @@ import org.slf4j.LoggerFactory;
  * @author Bruce Parrello
  *
  */
-public class MajorSnipReporter extends SnipReporter {
+public abstract class MajorSnipReporter extends SnipReporter {
 
     // FIELDS
     /** logging facility */
@@ -85,7 +85,7 @@ public class MajorSnipReporter extends SnipReporter {
     /** gene name match pattern */
     private static final Pattern GENE_NAME = Pattern.compile("[a-z]{3}(?:[A-Z])?");
     /** function column width */
-    private static int GROUP_WIDTH = 30 * 256;
+    private static int TEXT_WIDTH = 30 * 256;
 
     /**
      * Set up the Excel output and get the special subset IDs from the command processor.
@@ -149,10 +149,12 @@ public class MajorSnipReporter extends SnipReporter {
         this.setTextCell(3, "strand", this.headStyle);
         this.setTextCell(4, "gene_name", this.headStyle);
         this.setTextCell(5, "length", this.headStyle);
-        this.setTextCell(6, "groups", this.headStyle);
-        this.setTextCell(7, "all", this.headStyle);
-        // Fix the group column width.
-        this.worksheet.setColumnWidth(6, GROUP_WIDTH);
+        this.setTextCell(6, "function", this.headStyle);
+        this.setTextCell(7, "groups", this.headStyle);
+        this.setTextCell(8, "all", this.headStyle);
+        // Fix the text column widths.
+        this.worksheet.setColumnWidth(6, TEXT_WIDTH);
+        this.worksheet.setColumnWidth(7, TEXT_WIDTH);
     }
 
     @Override
@@ -161,14 +163,15 @@ public class MajorSnipReporter extends SnipReporter {
         this.changed = new TreeSet<String>();
         // Save the base-genome feature.
         this.feat = feat;
-        String baseProt = feat.getProteinTranslation();
-        // Loop through the regions, finding changed proteins.
+        ExtendedProteinRegion baseRegion = regions.get(feat.getId());
+        // Loop through the regions, finding changes.
         for (ExtendedProteinRegion region : regions) {
-            Feature feat2 = region.getFeature();
-            String myProt = feat2.getProteinTranslation();
-            if (! StringUtils.endsWith(baseProt, myProt) && ! StringUtils.endsWith(myProt, baseProt)) {
-                // Here we have a significant change.
-                this.changed.add(feat2.getParent().getId());
+            if (region != baseRegion) {
+                Feature feat2 = region.getFeature();
+                if (this.testRegions(baseRegion, region)) {
+                    // Here we have a significant change.
+                    this.changed.add(feat2.getParent().getId());
+                }
             }
         }
     }
@@ -194,8 +197,12 @@ public class MajorSnipReporter extends SnipReporter {
             // Form the group list.
             String groups = StringUtils.join(this.processor.getGroups(this.feat.getId()), " | ");
             Collection<String> subs = this.feat.getSubsystems();
-            if (subs.size() > 0)
-                groups += " | " + StringUtils.join(subs, " | ");
+            if (subs.size() > 0) {
+                if (groups != null)
+                    groups += " | ";
+                groups += StringUtils.join(subs, " | ");
+            } else if (groups == null)
+                groups = "";
             // Now create the row.
             this.addRow();
             this.setTextCell(0, this.feat.getId(), null);
@@ -204,8 +211,9 @@ public class MajorSnipReporter extends SnipReporter {
             this.setTextCell(3, loc.getStrand(), this.flagStyle);
             this.setTextCell(4, gene, null);
             this.setNumCell(5, loc.getLength());
-            this.setTextCell(6, groups, this.groupStyle);
-            this.setTextCell(7, flag, this.flagStyle);
+            this.setTextCell(6, this.feat.getPegFunction(), this.groupStyle);
+            this.setTextCell(7, groups, this.groupStyle);
+            this.setTextCell(8, flag, this.flagStyle);
         }
 
     }
@@ -262,4 +270,64 @@ public class MajorSnipReporter extends SnipReporter {
         retVal.setCellStyle(this.numStyle);
         return retVal;
     }
+
+    /**
+     * Compare two regions to detect a change.
+     *
+     * @param region1	base region
+     * @param region2	test region
+     *
+     * @return TRUE if there is a reportable change, else FALSE
+     */
+    protected abstract boolean testRegions(ExtendedProteinRegion region1, ExtendedProteinRegion region2);
+
+    /**
+     * @return TRUE if the two sequence strings represent a significant change, else FALSE.
+     *
+     * @param seq1		base sequence
+     * @param seq2		other sequence
+     */
+    public boolean isSignificant(String seq1, String seq2) {
+        return ! StringUtils.endsWith(seq1, seq2) && ! StringUtils.endsWith(seq2, seq1);
+    }
+
+    /**
+     * This nested class produces a major-change report focused on protein changes.
+     */
+    public static class Protein extends MajorSnipReporter {
+
+        public Protein(OutputStream output, IParms processor) {
+            super(output, processor);
+        }
+
+        @Override
+        protected boolean testRegions(ExtendedProteinRegion region1, ExtendedProteinRegion region2) {
+            String prot1 = region1.getProteinTranslation();
+            String prot2 = region2.getProteinTranslation();
+            return super.isSignificant(prot1, prot2);
+        }
+
+    }
+
+    /**
+     * This nested class produces a major-change report focused on upstream changes.
+     */
+    public static class Upstream extends MajorSnipReporter {
+
+        public Upstream(OutputStream output, IParms processor) {
+            super(output, processor);
+        }
+
+        @Override
+        protected boolean testRegions(ExtendedProteinRegion region1, ExtendedProteinRegion region2) {
+            String dna1 = region1.getUpstreamDna();
+            String dna2 = region2.getUpstreamDna();
+            return super.isSignificant(dna1, dna2);
+        }
+
+    }
+
+
+
+
 }

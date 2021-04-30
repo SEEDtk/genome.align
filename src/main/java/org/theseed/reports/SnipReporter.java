@@ -58,7 +58,7 @@ public abstract class SnipReporter extends BaseReporter {
      * Enum for different report formats
      */
     public static enum Type {
-        TEXT, HTML, MAJOR;
+        TEXT, HTML, MAJORPROTEIN, MAJORUPSTREAM;
 
         /**
          * @return a reporting object of this type
@@ -75,8 +75,12 @@ public abstract class SnipReporter extends BaseReporter {
             case HTML :
                 retVal = new HtmlSnipReporter(output, processor);
                 break;
-            case MAJOR :
-                retVal = new MajorSnipReporter(output, processor);
+            case MAJORPROTEIN :
+                retVal = new MajorSnipReporter.Protein(output, processor);
+                break;
+            case MAJORUPSTREAM :
+                retVal = new MajorSnipReporter.Upstream(output, processor);
+                break;
             }
             return retVal;
         }
