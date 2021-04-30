@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.clustal.SnipColumn;
@@ -55,7 +56,7 @@ public class TextSnipReporter extends SnipReporter {
     }
 
     @Override
-    protected void openAlignment(String title, RegionList regions) {
+    protected void openAlignment(String title, RegionList regions, Feature feat) {
         this.title = title;
     }
 

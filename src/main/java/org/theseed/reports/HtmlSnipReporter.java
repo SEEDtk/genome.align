@@ -336,7 +336,7 @@ public class HtmlSnipReporter extends SnipReporter {
     }
 
     @Override
-    protected void openAlignment(String title, RegionList regions) {
+    protected void openAlignment(String title, RegionList regions, Feature feat) {
         // Each alignment has its own table.
         this.table = this.new TableEntry(title, regions);
         // Save the region list.

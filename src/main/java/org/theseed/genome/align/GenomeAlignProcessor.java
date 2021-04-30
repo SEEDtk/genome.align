@@ -14,7 +14,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.kohsuke.args4j.Argument;
@@ -61,6 +63,7 @@ import org.theseed.utils.ParseFailureException;
  * --gFile		file containing a list of genome IDs, used to determine the order of the output columns
  * --groups		name of a tab-delimited file containing group membership information (modulons, subsystems)
  * 				for the base genome features
+ * --special	comma-delimited list of important genome IDs, used for MAJOR-format report
  *
  * @author Bruce Parrello
  *
@@ -118,6 +121,10 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     /** grouping output file */
     @Option(name = "--groupOut", metaVar = "groups.snips.tbl", usage = "output file for group snip information")
     private File groupOutFile;
+
+    /** special genomes for major-change report */
+    @Option(name = "--special", metaVar = "id1,id2,id3...", usage = "comma-delimited list of IDs for genomes in subset used by major-change report")
+    private String specialGenomes;
 
     /** output file (if not STDOUT) */
     @Option(name = "-o", aliases = { "--output" }, metaVar = "outFile.html", usage = "output file (if not STDOUT)")
@@ -364,6 +371,12 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     @Override
     public List<String> getGroups(String fid) {
         return this.groupMap.get(fid);
+    }
+
+    @Override
+    public Set<String> getSpecial() {
+        Set<String> retVal = Arrays.stream(StringUtils.split(this.specialGenomes, ",")).collect(Collectors.toSet());
+        return retVal;
     }
 
 

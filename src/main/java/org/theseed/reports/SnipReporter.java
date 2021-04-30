@@ -58,7 +58,7 @@ public abstract class SnipReporter extends BaseReporter {
      * Enum for different report formats
      */
     public static enum Type {
-        TEXT, HTML;
+        TEXT, HTML, MAJOR;
 
         /**
          * @return a reporting object of this type
@@ -75,6 +75,8 @@ public abstract class SnipReporter extends BaseReporter {
             case HTML :
                 retVal = new HtmlSnipReporter(output, processor);
                 break;
+            case MAJOR :
+                retVal = new MajorSnipReporter(output, processor);
             }
             return retVal;
         }
@@ -101,6 +103,11 @@ public abstract class SnipReporter extends BaseReporter {
          * @param fid	feature of interest
          */
         List<String> getGroups(String fid);
+
+        /**
+         * @return the set of IDs for special genomes in the MAJOR report
+         */
+        Set<String> getSpecial();
 
     }
 
@@ -201,7 +208,7 @@ public abstract class SnipReporter extends BaseReporter {
     public void processAlignment(Feature feat, RegionList regions, List<Sequence> alignment) {
         // Start this section of the report.
         String function = feat.getPegFunction();
-        this.openAlignment(function, regions);
+        this.openAlignment(function, regions, feat);
         // We need to compute the wild strain genomes.  The first region is a wild genome, and all sequences
         // in the alignment that are not in the main genome ID list are wild as well.  Note the the wild set
         // may change between alignments if a wild strain is missing a region in this alignment run.
@@ -259,7 +266,6 @@ public abstract class SnipReporter extends BaseReporter {
             String snipString = snip.getChars();
             if (snip.isReal(baseChars, region)) {
                 // This snip is a change from the base.  Check for an edge condition.
-
                 if (snipString.contains("-"))
                     retVal = "D";
                 else
@@ -274,8 +280,9 @@ public abstract class SnipReporter extends BaseReporter {
      *
      * @param title		title of alignment
      * @param regions	regions being aligned
+     * @param feat		base genome feature
      */
-    protected abstract void openAlignment(String title, RegionList regions);
+    protected abstract void openAlignment(String title, RegionList regions, Feature feat);
 
     /**
      * Process a single set of snips.
