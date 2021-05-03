@@ -18,7 +18,7 @@ public class MarkedRegionList extends RegionList {
     // FIELDS
     /** serialization version ID */
     private static final long serialVersionUID = -8648986586599616750L;
-    /** number of regions that have no significant changes */
+    /** number of regions that have significant changes */
     int counter;
 
     /**

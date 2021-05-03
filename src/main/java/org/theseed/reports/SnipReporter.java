@@ -52,6 +52,8 @@ public abstract class SnipReporter extends BaseReporter {
     private IParms processor;
     /** map of genome IDs to names */
     private Map<String, String> gNameMap;
+    /** feature data output flag string for unmodified features */
+    private String fDataUnmodified;
 
 
     /**
@@ -193,6 +195,8 @@ public abstract class SnipReporter extends BaseReporter {
      */
     public void initializeOutput() {
         this.openReport(this.genomeIds);
+        // Create a record of empty fields for the feature-data output file.
+        this.fDataUnmodified = StringUtils.repeat('\t', this.genomeIds.size() - 1);
     }
 
     /**
@@ -236,10 +240,23 @@ public abstract class SnipReporter extends BaseReporter {
         }
         String fid = feat.getId();
         log.debug("{} snips found in alignment for {}.", count, fid);
+        // Form the flags for the featureData file.
+        String flags = IntStream.range(0, this.genomeIds.size()).mapToObj(i -> modifiedGenomes[i])
+                .collect(Collectors.joining("\t"));
+        // Write out the featureData record.
+        writeFeatureData(fid, flags);
+        // Finish off the alignment.
+        this.closeAlignment();
+    }
+
+    /**
+     * Write the featureData record for this feature.
+     *
+     * @param fid		ID of the feature to output
+     * @param flags		flag string of changes associated with the feature
+     */
+    private void writeFeatureData(String fid, String flags) {
         if (this.fDataOut != null) {
-            // Here we need to update the featureData file.
-            String flags = IntStream.range(0, this.genomeIds.size()).mapToObj(i -> modifiedGenomes[i])
-                    .collect(Collectors.joining("\t"));
             List<String> groupList = new ArrayList<String>();
             List<String> mainList = this.processor.getGroups(fid);
             if (mainList != null)
@@ -249,8 +266,15 @@ public abstract class SnipReporter extends BaseReporter {
                 groupList.addAll(others);
             this.fDataOut.format("%s\t%s\t%s%n", fid, StringUtils.join(groupList, ","), flags);
         }
-        // Finish off the alignment.
-        this.closeAlignment();
+    }
+
+    /**
+     * Write the featureData record for an unmodified feature.
+     *
+     * @param fid		ID of the feature to output
+     */
+    public void writeFeatureData(String fid) {
+        this.writeFeatureData(fid, this.fDataUnmodified);
     }
 
     /**

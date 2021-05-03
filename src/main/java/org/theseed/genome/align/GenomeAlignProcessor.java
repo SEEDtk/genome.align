@@ -196,6 +196,9 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                     List<String> groupList = new ArrayList<String>(10);
                     int arNum = line.getInt(2);
                     groupList.add(String.format("AR%d", arNum));
+                    String operon = line.get(3);
+                    if (! operon.isEmpty())
+                        groupList.add(operon);
                     String mods = line.get(1);
                     if (! mods.isEmpty())
                         groupList.addAll(Arrays.asList(StringUtils.split(mods, ",")));
@@ -240,10 +243,13 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
             log.info("Processing alignments.");
             for (Map.Entry<Feature, MarkedRegionList> alignEntry : this.alignMap.entrySet()) {
                 MarkedRegionList regions = alignEntry.getValue();
+                Feature feat = alignEntry.getKey();
                 // We only align these regions if at least one has a functional difference.
-                if (regions.getCounter() > 0) {
+                if (regions.getCounter() == 0) {
+                    // Nothing to align, but insure we have the feature-data output.
+                    reporter.writeFeatureData(feat.getId());
+                } else {
                     // Here we have enough data to do an alignment.
-                    Feature feat = alignEntry.getKey();
                     log.info("Performing alignment on {}.", feat);
                     regions.save(tempFile);
                     ClustalPipeline aligner = new ClustalPipeline(tempFile);
