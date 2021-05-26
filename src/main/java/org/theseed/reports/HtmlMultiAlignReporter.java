@@ -3,8 +3,7 @@
  */
 package org.theseed.reports;
 
-import java.io.OutputStream;
-
+import java.io.File;
 import java.util.List;
 import static j2html.TagCreator.*;
 
@@ -26,11 +25,8 @@ public class HtmlMultiAlignReporter extends MultiAlignReporter {
     /** color scheme */
     private AlignColoring scheme;
 
-    /**
-     * @param outStream
-     */
-    public HtmlMultiAlignReporter(OutputStream outStream) {
-        super(outStream);
+    public HtmlMultiAlignReporter(File outFile) {
+        super(outFile);
         this.scheme = new AlignColoring.Consensus();
     }
 
@@ -45,7 +41,7 @@ public class HtmlMultiAlignReporter extends MultiAlignReporter {
     }
 
     @Override
-    public void writeAlignment(String title, List<Sequence> alignment) {
+    public void writeAlignment(String fid, String title, List<Sequence> alignment) {
         ContainerTag alignTable = CoreHtmlUtilities.alignmentTable(alignment, this.scheme);
         this.println(alignTable.render());
     }

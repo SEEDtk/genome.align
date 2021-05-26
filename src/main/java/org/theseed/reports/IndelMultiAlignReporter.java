@@ -3,7 +3,7 @@
  */
 package org.theseed.reports;
 
-import java.io.OutputStream;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -37,8 +37,8 @@ public class IndelMultiAlignReporter extends MultiAlignReporter {
     /** map of genome IDs to genomes */
     private Map<String, Genome> genomeMap;
 
-    public IndelMultiAlignReporter(OutputStream outStream) {
-        super(outStream);
+    public IndelMultiAlignReporter(File outFile) {
+        super(outFile);
         this.genomeMap = new HashMap<String, Genome>();
     }
 
@@ -59,7 +59,7 @@ public class IndelMultiAlignReporter extends MultiAlignReporter {
     }
 
     @Override
-    public void writeAlignment(String title, List<Sequence> alignment) {
+    public void writeAlignment(String fid, String title, List<Sequence> alignment) {
         // Isolate the aligned sequences (that is, the ones that aren't bases.
         List<Sequence> aligned = new ArrayList<Sequence>(alignment.size());
         // This will hold the base sequence.

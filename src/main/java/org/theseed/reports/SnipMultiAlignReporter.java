@@ -3,7 +3,7 @@
  */
 package org.theseed.reports;
 
-import java.io.OutputStream;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -30,8 +30,8 @@ public class SnipMultiAlignReporter extends MultiAlignReporter {
     /** ID of the first base genome */
     private String base0GenomeId;
 
-    public SnipMultiAlignReporter(OutputStream outStream) {
-        super(outStream);
+    public SnipMultiAlignReporter(File outFile) {
+        super(outFile);
     }
 
     @Override
@@ -46,7 +46,7 @@ public class SnipMultiAlignReporter extends MultiAlignReporter {
     }
 
     @Override
-    public void writeAlignment(String title, List<Sequence> alignment) {
+    public void writeAlignment(String fid, String title, List<Sequence> alignment) {
         // We need to separate the sequences into base sequences and variable sequences.  The first base
         // sequence is special.
         String base0Sequence = null;

@@ -27,6 +27,8 @@ public class SequenceList {
     private double maxDist;
     /** list of attached sequences (including the base) */
     private List<Sequence> members;
+    /** ID of the base sequence feature */
+    private String baseFid;
 
     /**
      * Construct a sequence list from a base sequence.
@@ -41,6 +43,8 @@ public class SequenceList {
         // Add the sequence to the sequence list.
         this.members = new ArrayList<Sequence>();
         this.add(id, comment, dna);
+        // Save the feature ID.
+        this.baseFid = id;
         // Denote we only have one sequence.
         this.maxDist = 0.0;
     }
@@ -109,10 +113,17 @@ public class SequenceList {
     }
 
     /**
-     * @return the maxDist
+     * @return the maximum sequence distance
      */
     public double getMaxDist() {
         return this.maxDist;
+    }
+
+    /**
+     * @return the base sequence ID
+     */
+    public String getBaseFid() {
+        return this.baseFid;
     }
 
 }

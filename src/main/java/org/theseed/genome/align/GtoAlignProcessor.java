@@ -31,7 +31,7 @@ import org.theseed.sequence.clustal.ClustalPipeline;
  * will be considered.  At least one sequence must be in the first genome, as well.
  *
  * The positional parameters are the name of the file containing the first genome, then the names of the files containing the other
- * genomes.  The alignments will be written to the standard output.
+ * genomes.  The alignments will be written to the specified output file.
  *
  * The command-line options are as follows.
  *
@@ -39,6 +39,7 @@ import org.theseed.sequence.clustal.ClustalPipeline;
  * -v	show more detailed progress messages
  * -m	maximum kmer distance for a feature to be aligned
  * -K	kmer size for computing distances
+ * -o	output file or directory
  *
  * --format		output report format
  * --workDir	working directory name; the default is "Temp" in the current directory
@@ -70,6 +71,11 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
     /** output format */
     @Option(name = "--format", usage = "output format")
     private MultiAlignReporter.Type outputFormat;
+
+    /** output file */
+    @Option(name = "--output", aliases = { "-o" }, metaVar = "outFile.html", usage = "output file (or directory, if appropriate)",
+            required = true)
+    private File outFile;
 
     /** if specified, the upstream will be checked for illusory indels */
     @Option(name = "--upstream", usage = "if specified, an upstream check will be made for an illusory indel")
@@ -115,7 +121,7 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
         this.functionMap = new FunctionMap();
         this.sequenceMap = new HashMap<String, SequenceList>(3000);
         this.recaptures = 0;
-        try (MultiAlignReporter reporter = this.outputFormat.create(System.out)) {
+        try (MultiAlignReporter reporter = this.outputFormat.create(this.outFile)) {
             // Process the base genome to compute the functions of interest.
             this.processBase(this.gtoBaseFile);
             // Initialize the output report.
@@ -158,7 +164,7 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
                     List<Sequence> alignment = aligner.run();
                     if (this.upstreamCheck)
                         this.checkUpstream(alignment);
-                    reporter.writeAlignment(function, alignment);
+                    reporter.writeAlignment(seqs.getBaseFid(), function, alignment);
                     alignCount++;
                 }
             }

@@ -34,7 +34,8 @@ import org.theseed.sequence.clustal.SnipIterator;
  * Numerous alignments will be processed, each based on a single base genome feature and its upstream region.
  *
  * This method is also responsible for writing the feature data output file, which indicates which genomes have significant snips
- * in each feature.
+ * in each feature.  For each feature, the output file has one indicator for upstream and one for instream.  An "M" (mutation)
+ * indicates only nucleotide changes.  A "D" (deletion) indicates the presence of gap characters.
  *
  * @author Bruce Parrello
  *
@@ -196,7 +197,7 @@ public abstract class SnipReporter extends BaseReporter {
     public void initializeOutput() {
         this.openReport(this.genomeIds);
         // Create a record of empty fields for the feature-data output file.
-        this.fDataUnmodified = StringUtils.repeat('\t', this.genomeIds.size() - 1);
+        this.fDataUnmodified = StringUtils.repeat("  \t", this.genomeIds.size() - 1) + "  ";
     }
 
     /**
@@ -229,7 +230,7 @@ public abstract class SnipReporter extends BaseReporter {
         SnipIterator.Run snipRun = new SnipIterator.Run(regions, alignment, wildSet, this.genomeIds);
         // This will track the genomes that have significant snips.
         String[] modifiedGenomes = new String[this.genomeIds.size()];
-        Arrays.fill(modifiedGenomes, "");
+        Arrays.fill(modifiedGenomes, "  ");
         int count = 0;
         for (SnipColumn snipCol : snipRun) {
             this.processSnips(snipCol);
@@ -289,15 +290,24 @@ public abstract class SnipReporter extends BaseReporter {
         String retVal = original;
         // A character code of "D" overrides everything else.  Also, if this change is not
         // significant, we skip it.
-        if (snip.isSignificant() && ! original.contentEquals("D")) {
-            // Here we want to look for "D" (gap) or "M" (change).
+        if (snip.isSignificant()) {
+            // Here we want to look for "D" (gap), "M" (change).
             String snipString = snip.getChars();
+            int snipLoc = snip.getOffset();
+            int snipLen = snip.getLen();
             if (snip.isReal(baseChars, region)) {
-                // This snip is a change from the base.  Check for an edge condition.
-                if (snipString.contains("-"))
-                    retVal = "D";
-                else
-                    retVal = "M";
+                // Determine if we are upstream (0) or instream (1). The result is an index into
+                // the character relevant to this change.
+                int type = (snipLoc + snipLen > region.getUpstreamDistance() ? 1 : 0);
+                // If we are already a "D", we stay that way. Otherwise we test.
+                char[] myChars = original.toCharArray();
+                if (myChars[type] != 'D') {
+                    if (snipString.contains("-"))
+                        myChars[type] = 'D';
+                    else
+                        myChars[type] = 'M';
+                    retVal = String.valueOf(myChars);
+                }
             }
         }
         return retVal;

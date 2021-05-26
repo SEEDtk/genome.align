@@ -3,7 +3,7 @@
  */
 package org.theseed.reports;
 
-import java.io.OutputStream;
+import java.io.File;
 import java.util.List;
 
 import org.theseed.genome.Genome;
@@ -17,8 +17,8 @@ import org.theseed.sequence.Sequence;
  */
 public class TextMultiAlignReporter extends MultiAlignReporter {
 
-    public TextMultiAlignReporter(OutputStream outStream) {
-        super(outStream);
+    public TextMultiAlignReporter(File outFile) {
+        super(outFile);
     }
 
     @Override
@@ -26,7 +26,7 @@ public class TextMultiAlignReporter extends MultiAlignReporter {
     }
 
     @Override
-    public void writeAlignment(String title, List<Sequence> alignment) {
+    public void writeAlignment(String fid, String title, List<Sequence> alignment) {
         this.println(title);
         this.println();
         for (Sequence seq : alignment)
