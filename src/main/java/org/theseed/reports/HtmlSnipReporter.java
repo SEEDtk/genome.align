@@ -89,7 +89,7 @@ public class HtmlSnipReporter extends SnipReporter {
     /** HTML encoding for a hard break */
     private static final String BREAK_RENDER = br().render();
     /** location of the group page */
-    private static final String GROUP_URL = "http://core.theseed.org/SEEDtk/rna.cgi/groups?group=";
+    private static final String GROUP_URL = "http://rnaseq.theseed.org/rna.cgi/groups?group=";
 
     /**
      * Utility class for tracking subsystem links.
@@ -143,6 +143,8 @@ public class HtmlSnipReporter extends SnipReporter {
         private List<String> groups;
         /** section table */
         private HtmlTable<Key.Null> alignment;
+        /** base feature ID */
+        private String baseFid;
 
         /**
          * Create a new table entry.
@@ -156,6 +158,7 @@ public class HtmlSnipReporter extends SnipReporter {
             this.loc = feat.getLocation();
             this.title = title;
             this.titleLink = feat.getParent().getLinker().featureLink(feat.getId(), text(title));
+            this.baseFid = feat.getId();
             Collection<String> subsysList = feat.getSubsystems();
             if (subsysList.isEmpty()) {
                 this.subsystems = null;
@@ -209,7 +212,8 @@ public class HtmlSnipReporter extends SnipReporter {
                 modList.with(li(createGroupLinks(this.groups)));
             if (this.subsystems != null)
                 modList.with(li(this.subsystems));
-            return div(h2(this.titleLink), modList, this.alignment.output());
+            String fidName = "peg_" + StringUtils.substringAfterLast(this.baseFid, ".");
+            return div(a().withName(fidName), h2(join(this.baseFid + ": ", this.titleLink)), modList, this.alignment.output());
         }
 
         /**
