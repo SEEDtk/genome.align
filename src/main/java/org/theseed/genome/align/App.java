@@ -11,7 +11,7 @@ import org.theseed.utils.BaseProcessor;
  * genomes		align the genomes in a directory and output the snips
  * splice		align a genome with a reference genome to fill in the gaps
  * diff			compute the number of proteins in each of a set of genomes that differ from a base strain
- *
+ * snipCount	count the snip changes in a groups.snips.tbl file
  */
 public class App
 {
@@ -34,6 +34,9 @@ public class App
             break;
         case "diff" :
             processor = new DiffProcessor();
+            break;
+        case "snipCount" :
+            processor = new SnipCountProcessor();
             break;
         default:
             throw new RuntimeException("Invalid command " + command);
