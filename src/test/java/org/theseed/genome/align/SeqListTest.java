@@ -6,7 +6,6 @@ import junit.framework.TestSuite;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.theseed.test.Matchers.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -64,7 +63,7 @@ public class SeqListTest
         DnaKmers kmers = new DnaKmers(dna1);
         assertThat(dist, equalTo(baseKmers.distance(kmers)));
         boolean added = list.add(feat.getId(), loc.toString(), dna1, 0.1);
-        assertThat(added, isTrue());
+        assertThat(added, equalTo(true));
         assertThat(list.getMaxDist(), equalTo(dist));
         gto = new Genome(new File("data", "W3110-30317.gto"));
         feat = gto.getFeature("fig|316407.118.peg.3302");
@@ -74,7 +73,7 @@ public class SeqListTest
         kmers = new DnaKmers(dna2);
         assertThat(dist2, equalTo(baseKmers.distance(kmers)));
         added = list.add(feat.getId(), loc.toString(), dna2, 0.1);
-        assertThat(added, isTrue());
+        assertThat(added, equalTo(true));
         assertThat(list.getMaxDist(), equalTo(dist2));
         gto = new Genome(new File("data", "W3110-30316.gto"));
         feat = gto.getFeature("fig|316407.117.peg.3328");
@@ -84,7 +83,7 @@ public class SeqListTest
         kmers = new DnaKmers(dna3);
         assertThat(dist, equalTo(baseKmers.distance(kmers)));
         added = list.add(feat.getId(), loc.toString(), dna3, 0.1);
-        assertThat(added, isFalse());
+        assertThat(added, equalTo(false));
         assertThat(list.size(), equalTo(3));
         assertThat(list.getMaxDist(), equalTo(dist2));
         File temp = new File("data", "temp.ser");
@@ -96,7 +95,7 @@ public class SeqListTest
             assertThat(seq.getSequence(), equalTo(baseDna));
             assertThat(iter.next().getSequence(), equalTo(dna1));
             assertThat(iter.next().getSequence(), equalTo(dna2));
-            assertThat(iter.hasNext(), isFalse());
+            assertThat(iter.hasNext(), equalTo(false));
         }
     }
 }
