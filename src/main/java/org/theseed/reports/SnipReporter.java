@@ -46,7 +46,7 @@ public abstract class SnipReporter extends BaseReporter {
     /** logging facility */
     protected static Logger log = LoggerFactory.getLogger(SnipReporter.class);
     /** IDs of the aligned genomes */
-    private List<String> genomeIds;
+    private List<GenomeLabel> genomeLabels;
     /** feature data output file */
     private PrintWriter fDataOut;
     /** controlling processor */
@@ -126,10 +126,10 @@ public abstract class SnipReporter extends BaseReporter {
      */
     public SnipReporter(OutputStream output, IParms processor) {
         super(output);
-        this.genomeIds = new ArrayList<String>();
+        this.genomeLabels = new ArrayList<GenomeLabel>();
         this.fDataOut = null;
         this.processor = processor;
-        // Create the genome map.
+        // Create the genome map and ID set.
         this.gNameMap = new HashMap<String, String>();
     }
 
@@ -149,7 +149,7 @@ public abstract class SnipReporter extends BaseReporter {
      * @param genome	genome to register
      */
     public void register(Genome genome) {
-        this.genomeIds.add(genome.getId());
+        this.genomeLabels.add(new GenomeLabel(genome));
         this.gNameMap.put(genome.getId(), genome.getName());
         this.registerGenome(genome);
     }
@@ -166,27 +166,29 @@ public abstract class SnipReporter extends BaseReporter {
      *
      * @param orderingList	list of genome IDs representing the desired order
      */
-    public void reorder(List<String> orderingList) {
+    public void reorder(List<GenomeLabel> orderingList) {
         // Create a set of all the existing genomes.
-        Set<String> oldGenomes = this.genomeIds.stream().collect(Collectors.toSet());
+        Set<GenomeLabel> oldGenomes = this.genomeLabels.stream().collect(Collectors.toSet());
         // Copy the base genome to the output list.
-        String baseGenome = this.genomeIds.get(0);
-        this.genomeIds.clear();
-        this.genomeIds.add(baseGenome);
+        GenomeLabel baseGenome = this.genomeLabels.get(0);
+        this.genomeLabels.clear();
+        this.genomeLabels.add(baseGenome);
         oldGenomes.remove(baseGenome);
         // Now loop through the ordering list, adding all the genomes that are legitimate.
-        for (String genome : orderingList) {
+        for (GenomeLabel genome : orderingList) {
             if (oldGenomes.contains(genome)) {
-                this.genomeIds.add(genome);
+                this.genomeLabels.add(genome);
                 oldGenomes.remove(genome);
             }
         }
         // Now add the residual.
-        this.genomeIds.addAll(oldGenomes);
+        this.genomeLabels.addAll(oldGenomes);
         // Write the names to the feature-data output.
         if (this.fDataOut != null) {
-            for (String genomeId : this.genomeIds)
+            for (GenomeLabel genomeData : this.genomeLabels) {
+                String genomeId = genomeData.getId();
                 this.fDataOut.println(genomeId + "\t" + this.getGName(genomeId));
+            }
             this.fDataOut.println("//");
         }
     }
@@ -195,9 +197,9 @@ public abstract class SnipReporter extends BaseReporter {
      * Begin the alignment portion of the report.
      */
     public void initializeOutput() {
-        this.openReport(this.genomeIds);
+        this.openReport(this.genomeLabels);
         // Create a record of empty fields for the feature-data output file.
-        this.fDataUnmodified = StringUtils.repeat("  \t", this.genomeIds.size() - 1) + "  ";
+        this.fDataUnmodified = StringUtils.repeat("  \t", this.genomeLabels.size() - 1) + "  ";
     }
 
     /**
@@ -205,7 +207,7 @@ public abstract class SnipReporter extends BaseReporter {
      *
      * @param genomeIdList	list of aligned genomes, in order
      */
-    protected abstract void openReport(List<String> genomeIdList);
+    protected abstract void openReport(List<GenomeLabel> genomeIdList);
 
     /**
      * Process an alignment.
@@ -218,18 +220,20 @@ public abstract class SnipReporter extends BaseReporter {
         // Start this section of the report.
         String function = feat.getPegFunction();
         this.openAlignment(function, regions, feat);
-        // We need to compute the wild strain genomes.  The first region is a wild genome, and all sequences
+        // We need to compute the wild strain genomes.  The first region is for a wild genome, and all sequences
         // in the alignment that are not in the main genome ID list are wild as well.  Note the the wild set
         // may change between alignments if a wild strain is missing a region in this alignment run.
         Set<String> wildSet = new TreeSet<String>();
+        // Get the genome IDs in order.
+        List<String> genomeIds = this.genomeLabels.stream().map(x -> x.getId()).collect(Collectors.toList());
         // Start with the base genome.
-        wildSet.add(this.genomeIds.get(0));
+        wildSet.add(this.genomeLabels.get(0).getId());
         // Add the genomes not being displayed.
-        regions.stream().map(x -> Feature.genomeOf(x.getLabel())).filter(g -> ! this.genomeIds.contains(g)).forEach(g -> wildSet.add(g));
+        regions.stream().map(x -> Feature.genomeOf(x.getLabel())).filter(g -> ! genomeIds.contains(g)).forEach(g -> wildSet.add(g));
         // Now we need to iterate through the snips.
-        SnipIterator.Run snipRun = new SnipIterator.Run(regions, alignment, wildSet, this.genomeIds);
+        SnipIterator.Run snipRun = new SnipIterator.Run(regions, alignment, wildSet, genomeIds);
         // This will track the genomes that have significant snips.
-        String[] modifiedGenomes = new String[this.genomeIds.size()];
+        String[] modifiedGenomes = new String[this.genomeLabels.size()];
         Arrays.fill(modifiedGenomes, "  ");
         int count = 0;
         for (SnipColumn snipCol : snipRun) {
@@ -242,7 +246,7 @@ public abstract class SnipReporter extends BaseReporter {
         String fid = feat.getId();
         log.debug("{} snips found in alignment for {}.", count, fid);
         // Form the flags for the featureData file.
-        String flags = IntStream.range(0, this.genomeIds.size()).mapToObj(i -> modifiedGenomes[i])
+        String flags = IntStream.range(0, this.genomeLabels.size()).mapToObj(i -> modifiedGenomes[i])
                 .collect(Collectors.joining("\t"));
         // Write out the featureData record.
         writeFeatureData(fid, flags);

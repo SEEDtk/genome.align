@@ -3,7 +3,11 @@
  */
 package org.theseed.proteins;
 
+import java.io.IOException;
+import java.util.Set;
+
 import org.theseed.genome.Feature;
+import org.theseed.utils.ParseFailureException;
 
 /**
  * THis is the base class for feature filters.  These take a feature as input and either pass or fail the feature.
@@ -18,14 +22,25 @@ public abstract class FeatureFilter {
      */
     public interface IParms {
 
+        /**
+         * @return the set of acceptable feature IDs
+         *
+         * @throws IOException
+         * @throws ParseFailureException
+         */
+        public Set<String> getFeatureSet() throws ParseFailureException, IOException;
+
     }
 
     /**
      * Construct a filter.
      *
      * @param processor		constructing client, containing parameters
+     *
+     * @throws IOException
+     * @throws ParseFailureException
      */
-    public FeatureFilter(IParms processor) {
+    public FeatureFilter(IParms processor) throws ParseFailureException, IOException {
     }
 
     /**
@@ -40,19 +55,24 @@ public abstract class FeatureFilter {
      * This enum describes the typer of filters.
      */
     public static enum Type {
-        NONPHAGE;
+        NONPHAGE, LIST;
 
         /**
          * @return a feature filter of the specified type.
          *
-         * @param processor		constructoing client
+         * @param processor		constructing client
+         *
+         * @throws IOException
+         * @throws ParseFailureException
          */
-        public FeatureFilter create(IParms processor) {
+        public FeatureFilter create(IParms processor) throws ParseFailureException, IOException {
             FeatureFilter retVal = null;
             switch (this) {
             case NONPHAGE:
                 retVal = new NonPhageFeatureFilter(processor);
                 break;
+            case LIST:
+                retVal = new ListFeatureFilter(processor);
             }
             return retVal;
         }

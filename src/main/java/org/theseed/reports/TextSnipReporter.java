@@ -36,9 +36,9 @@ public class TextSnipReporter extends SnipReporter {
     }
 
     @Override
-    protected void openReport(List<String> genomeIdList) {
+    protected void openReport(List<GenomeLabel> genomeLabels) {
         // Here we can write the column headers.
-        this.println(genomeIdList.stream().collect(Collectors.joining("\t", "function\t", "")));
+        this.println(genomeLabels.stream().map(x -> x.getHeader()).collect(Collectors.joining("\t", "function\t", "")));
     }
 
     @Override

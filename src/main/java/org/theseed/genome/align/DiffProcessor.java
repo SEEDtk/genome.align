@@ -10,14 +10,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-
+import java.util.Set;
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
+import org.theseed.io.TabbedLineReader;
 import org.theseed.proteins.FeatureFilter;
 import org.theseed.proteins.Function;
 import org.theseed.proteins.FunctionMap;
@@ -64,6 +64,10 @@ public class DiffProcessor extends BaseProcessor implements FeatureFilter.IParms
     @Option(name = "--filter", usage = "type of feature filtering")
     private List<FeatureFilter.Type> filterTypes;
 
+    /** feature-filter file for LIST filtering */
+    @Option(name = "--fidFile", metaVar = "fidsToKeep.tbl", usage = "file containing list of acceptable features for LIST filter")
+    private File fidFile;
+
     /** base genome file */
     @Argument(index = 0, metaVar = "base.gto", usage = "base genome file", required = true)
     private File baseFile;
@@ -94,7 +98,9 @@ public class DiffProcessor extends BaseProcessor implements FeatureFilter.IParms
                 throw new FileNotFoundException("Test genome file " + testFile + " not found or unreadable.");
         }
         // Build the filters.
-        this.filters = this.filterTypes.stream().map(x -> x.create(this)).collect(Collectors.toList());
+        this.filters = new ArrayList<FeatureFilter>(this.filterTypes.size());
+        for (FeatureFilter.Type filterType : this.filterTypes)
+            this.filters.add(filterType.create(this));
         return true;
     }
 
@@ -205,6 +211,18 @@ public class DiffProcessor extends BaseProcessor implements FeatureFilter.IParms
         Function fun = this.funMap.getByName(pegFunction);
         if (fun != null)
             retVal = this.featureMap.get(fun.getId());
+        return retVal;
+    }
+
+
+    @Override
+    public Set<String> getFeatureSet() throws ParseFailureException, IOException {
+        if (this.fidFile == null)
+            throw new ParseFailureException("Feature-list file required for filtering.");
+        if (! this.fidFile.canRead())
+            throw new FileNotFoundException("Feature-list file is not found or unreadable.");
+        // Read the set of feature IDs from column 1 of the file
+        var retVal = TabbedLineReader.readSet(this.fidFile, "1");
         return retVal;
     }
 

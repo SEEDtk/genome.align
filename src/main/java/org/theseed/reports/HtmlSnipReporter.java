@@ -44,14 +44,12 @@ import j2html.tags.DomContent;
 public class HtmlSnipReporter extends SnipReporter {
 
     // FIELDS
-    /** list of genome IDs */
-    private List<String> genomeIds;
+    /** list of genome labels */
+    private List<GenomeLabel> genomeLabels;
     /** current table section */
     private TableEntry table;
     /** list of table sections */
     private List<TableEntry> sections;
-    /** alignment table column specification array */
-    private ColSpec[] cols;
     /** page writer */
     private PageWriter writer;
     /** cell width */
@@ -157,7 +155,7 @@ public class HtmlSnipReporter extends SnipReporter {
             Feature feat = regions.get(0).getFeature();
             this.loc = feat.getLocation();
             this.title = title;
-            this.titleLink = feat.getParent().getLinker().featureLink(feat.getId(), text(title));
+            this.titleLink = this.linkedTitle(title, feat);
             this.baseFid = feat.getId();
             Collection<String> subsysList = feat.getSubsystems();
             if (subsysList.isEmpty()) {
@@ -181,8 +179,39 @@ public class HtmlSnipReporter extends SnipReporter {
                 // Save the subsystem ID list so the base class can put it in the group file.
                 HtmlSnipReporter.this.fidSubMap.put(feat.getId(), subIds);
             }
-            this.alignment = new HtmlTable<Key.Null>(HtmlSnipReporter.this.cols);
+            // Create the column headings.  Note that if there is a feature for the column, then we need to
+            // link it to PATRIC.
+            final int n = HtmlSnipReporter.this.genomeLabels.size();
+            ColSpec[] cols = new ColSpec[n+1];
+            cols[0] = new ColSpec.Normal("Location");
+            for (int i = 0; i < n; i++) {
+                GenomeLabel genome = HtmlSnipReporter.this.genomeLabels.get(i);
+                String genomeId = genome.getId();
+                String titleText = genome.getHeader();
+                DomContent colTitle = null;
+                // Search for the correct region.
+                var iter = regions.iterator();
+                while (iter.hasNext() && colTitle == null) {
+                    Feature rFeat = iter.next().getFeature();
+                    if (rFeat.getParent().getId().contentEquals(genomeId))
+                        colTitle = this.linkedTitle(titleText, rFeat);
+                }
+                if (colTitle == null)
+                    colTitle = text(titleText);
+                cols[i+1] = new ColSpec.Aligned(colTitle).setTip(genome.getToolTip());
+            }
+            this.alignment = new HtmlTable<Key.Null>(cols);
             this.groups = HtmlSnipReporter.this.getProcessor().getGroups(feat.getId());
+        }
+
+        /**
+         * @return a hyperlink to the specified feature
+         *
+         * @param title		text for the hyperlink
+         * @param feat		feature to which we should link
+         */
+        public ContainerTag linkedTitle(String title, Feature feat) {
+            return feat.getParent().getLinker().featureLink(feat.getId(), text(title));
         }
 
         /**
@@ -327,16 +356,11 @@ public class HtmlSnipReporter extends SnipReporter {
     }
 
     @Override
-    protected void openReport(List<String> genomeIdList) {
-        // Save the genome ID list.  Note that the first genome is the base, and the location column precedes it.
-        this.genomeIds = genomeIdList;
-        List<ColSpec> colSpecs = new ArrayList<ColSpec>(this.genomeIds.size() + 1);
-        colSpecs.add(new ColSpec.Normal("Location"));
-        this.genomeIds.stream().forEach(x -> colSpecs.add(new ColSpec.Aligned(x).setTip(this.getGName(x))));
-        ColSpec[] cols = new ColSpec[colSpecs.size()];
-        this.cols = colSpecs.toArray(cols);
+    protected void openReport(List<GenomeLabel> genomeList) {
+        // Save the genome label list.  Note that the first genome is the base, and the location column precedes it.
+        this.genomeLabels = genomeList;
         // Create the difference bitmap.
-        this.diffs = new BitSet(this.genomeIds.size());
+        this.diffs = new BitSet(this.genomeLabels.size());
     }
 
     @Override

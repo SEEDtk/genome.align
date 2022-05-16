@@ -30,6 +30,7 @@ import org.theseed.io.TabbedLineReader;
 import org.theseed.proteins.FeatureFilter;
 import org.theseed.proteins.Function;
 import org.theseed.proteins.FunctionMap;
+import org.theseed.reports.GenomeLabel;
 import org.theseed.reports.HtmlSnipReporter;
 import org.theseed.reports.HtmlSnipReporter.Sort;
 import org.theseed.reports.SnipReporter;
@@ -60,10 +61,13 @@ import org.theseed.utils.ParseFailureException;
  * --format		output report format
  * --workDir	working directory name; the default is "Temp" in the current directory
  * --sort		sort order for HTML output
- * --gFile		file containing a list of genome IDs, used to determine the order of the output columns
+ * --gFile		file containing a list of genome IDs, used to determine the order of the output columns;
+ * 				the file is tab-delimited, with headers; column 1 is genome IDs, column 2 is tooltips,
+ * 				column 3 is header labels
  * --groups		name of a tab-delimited file containing group membership information (modulons, subsystems)
  * 				for the base genome features
  * --special	comma-delimited list of important genome IDs, used for MAJOR-format report
+ * --fidFile	tab-delimited file with headers containing desired feature IDs in the first column (for LIST filter)
  *
  * @author Bruce Parrello
  *
@@ -82,7 +86,7 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     /** list of filters */
     private List<FeatureFilter> filters;
     /** genome ID reordering list */
-    private List<String> genomeIds;
+    private List<GenomeLabel> genomeLabels;
     /** map of feature IDs to group descriptors */
     private Map<String, List<String>> groupMap;
     /** output stream */
@@ -130,6 +134,10 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     @Option(name = "-o", aliases = { "--output" }, metaVar = "outFile.html", usage = "output file (if not STDOUT)")
     private File outFile;
 
+    /** feature-filter file for LIST filtering */
+    @Option(name = "--fidFile", metaVar = "fidsToKeep.tbl", usage = "file containing list of acceptable features for LIST filter")
+    private File fidFile;
+
     /** input genome directory */
     @Argument(index = 0, metaVar = "inDir", usage = "input genome directory", required = true)
     private File inDir;
@@ -149,11 +157,12 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         this.cellWidth = 20;
         this.sortOrder = HtmlSnipReporter.Sort.CHANGES;
         this.gFile = null;
-        this.genomeIds = null;
+        this.genomeLabels = null;
         this.maxUpstream = 100;
         this.groupFile = null;
         this.outFile = null;
         this.groupOutFile = null;
+        this.fidFile = null;
     }
 
     @Override
@@ -175,11 +184,11 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         if (this.gFile != null) {
             if (! this.gFile.canRead())
                 throw new FileNotFoundException("Genome ID ordering file " + this.gFile + " not found or unreadable.");
-            try (TabbedLineReader gStream = new TabbedLineReader(this.gFile, 1)) {
-                this.genomeIds = new ArrayList<String>();
+            try (TabbedLineReader gStream = new TabbedLineReader(this.gFile)) {
+                this.genomeLabels = new ArrayList<GenomeLabel>();
                 for (TabbedLineReader.Line line : gStream)
-                    this.genomeIds.add(line.get(0));
-                log.info("{} genome IDs read from ordering file {}.", this.genomeIds.size(), this.gFile);
+                    this.genomeLabels.add(new GenomeLabel(line.get(0), line.get(1), line.get(2)));
+                log.info("{} genome IDs read from ordering file {}.", this.genomeLabels.size(), this.gFile);
             }
         }
         // Create the group map (if any).
@@ -232,8 +241,8 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
             // Build all the alignment lists.
             this.buildAlignments(reporter);
             // Fix the ordering (if necessary).
-            if (this.genomeIds != null)
-                reporter.reorder(this.genomeIds);
+            if (this.genomeLabels != null)
+                reporter.reorder(this.genomeLabels);
             // Denote we are done registering genomes.
             reporter.initializeOutput();
             // Create our temporary file.
@@ -280,14 +289,22 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
         Map<String, RegionList> baseMap = RegionList.createMap(this.funMap, base, this.maxUpstream);
         // Now prime the alignment lists from the base map.
         log.info("Sorting features by location.");
+        int filterCount = 0;
+        int processCount = 0;
         for (RegionList regions : baseMap.values()) {
             for (ExtendedProteinRegion region : regions) {
-                MarkedRegionList singleton = new MarkedRegionList();
-                singleton.add(region);
-                this.alignMap.put(region.getFeature(), singleton);
+                processCount++;
+                if (! this.checkFilters(region))
+                    filterCount++;
+                else {
+                    MarkedRegionList singleton = new MarkedRegionList();
+                    singleton.add(region);
+                    this.alignMap.put(region.getFeature(), singleton);
+                }
             }
         }
-        log.info("{} features with {} functions processed for base genome.", this.alignMap.size(), baseMap.size());
+        log.info("{} features with {} functions processed for base genome, {} removed by filter.",
+                processCount, baseMap.size(), filterCount);
         // Register the base genome for the report.
         reporter.register(base);
         // Now read the other genomes.  If we find the base, we skip it.
@@ -307,32 +324,32 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                 int foundCount = 0;
                 int badFunCount = 0;
                 int tooFarCount = 0;
-                int filterCount = 0;
                 int sameCount = 0;
+                int skipCount = 0;
                 ExtendedProteinRegion.GenomeIterator iter = new ExtendedProteinRegion.GenomeIterator(genome, this.maxUpstream);
                 while (iter.hasNext()) {
                     // Get this region and try to find the function in the function map.
                     ExtendedProteinRegion region = iter.next();
-                    if (! this.checkFilters(region))
-                        filterCount++;
+                    Feature feat = region.getFeature();
+                    Function fun = this.funMap.getByName(feat.getFunction());
+                    if (fun == null)
+                        badFunCount++;
                     else {
-                        Feature feat = region.getFeature();
-                        Function fun = this.funMap.getByName(feat.getFunction());
-                        if (fun == null)
-                            badFunCount++;
+                        // Here we found it.  If we didn't find it, then it won't match anything anyway.
+                        RegionList regions = baseMap.get(fun.getId());
+                        ExtendedProteinRegion closest = regions.getClosest(region, this.getMaxDist());
+                        if (closest == null)
+                            tooFarCount++;
                         else {
-                            // Here we found it.  If we didn't find it, then it won't match anything anyway.
-                            RegionList regions = baseMap.get(fun.getId());
-                            ExtendedProteinRegion closest = regions.getClosest(region, this.getMaxDist());
-                            if (closest == null)
-                                tooFarCount++;
+                            // Here we have an eligible close feature.  Add this region to its alignment list.  We always
+                            // count a wild strain, but we skip anything that has the same protein.
+                            Feature featBase = closest.getFeature();
+                            String protBase = featBase.getProteinTranslation();
+                            String upstreamDnaBase = closest.getUpstreamDna();
+                            MarkedRegionList alignment = this.alignMap.get(featBase);
+                            if (alignment == null)
+                                skipCount++;
                             else {
-                                // Here we have an eligible close feature.  Add this region to its alignment list.  We always
-                                // count a wild strain, but we skip anything that has the same protein.
-                                Feature featBase = closest.getFeature();
-                                String protBase = featBase.getProteinTranslation();
-                                String upstreamDnaBase = closest.getUpstreamDna();
-                                MarkedRegionList alignment = this.alignMap.get(featBase);
                                 alignment.add(region);
                                 if (! wild) {
                                     if (protBase.contentEquals(feat.getProteinTranslation()) && upstreamDnaBase.contentEquals(region.getUpstreamDna()))
@@ -348,7 +365,8 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
                 }
                 log.info("{} regions queued for alignment.  {} had unusual functions, {} were too far to align.",
                         foundCount, badFunCount, tooFarCount);
-                log.info("{} regions rejected by filtering.  {} were functionally identical to the base.", filterCount, sameCount);
+                log.info("{} regions were functionally identical to the base, {} skipped by filtering.",
+                        sameCount, skipCount);
             }
         }
     }
@@ -382,6 +400,17 @@ public class GenomeAlignProcessor extends BaseAlignProcessor implements FeatureF
     @Override
     public Set<String> getSpecial() {
         Set<String> retVal = Arrays.stream(StringUtils.split(this.specialGenomes, ",")).collect(Collectors.toSet());
+        return retVal;
+    }
+
+    @Override
+    public Set<String> getFeatureSet() throws ParseFailureException, IOException {
+        if (this.fidFile == null)
+            throw new ParseFailureException("Feature-list file required for filtering.");
+        if (! this.fidFile.canRead())
+            throw new FileNotFoundException("Feature-list file is not found or unreadable.");
+        // Read the set of feature IDs from column 1 of the file
+        var retVal = TabbedLineReader.readSet(this.fidFile, "1");
         return retVal;
     }
 

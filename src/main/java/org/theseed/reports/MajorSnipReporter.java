@@ -140,7 +140,7 @@ public abstract class MajorSnipReporter extends SnipReporter {
     }
 
     @Override
-    protected void openReport(List<String> genomeIdList) {
+    protected void openReport(List<GenomeLabel> genomeLabels) {
         // Fill in the headings.
         this.addRow();
         this.setTextCell(0, "fig_id", this.headStyle);
