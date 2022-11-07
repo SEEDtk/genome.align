@@ -106,11 +106,6 @@ public class HtmlSnipReporter extends SnipReporter {
             super(null, name);
         }
 
-        @Override
-        protected String normalize() {
-            return this.getName();
-        }
-
         /**
          * @return a link to the subsystem group page
          */
@@ -118,6 +113,11 @@ public class HtmlSnipReporter extends SnipReporter {
             String title = LinkObject.Core.cleanSubsystemName(this.getName());
             DomContent retVal = a(this.getName()).withHref(GROUP_URL + this.getId() + ";title=" + title).withTarget("_blank");
             return retVal;
+        }
+
+        @Override
+        protected String normalize(String name) {
+            return name;
         }
 
     }
