@@ -277,7 +277,7 @@ public class GtoAlignProcessor extends BaseAlignProcessor {
      */
     private boolean addFeature(SequenceList seqList, Feature feat) {
         Location loc = feat.getLocation();
-        String dna = feat.getParent().getDna(loc);
+        String dna = feat.getDna();
         boolean retVal = seqList.add(feat.getId(), loc.toString(), dna, this.getMaxDist());
         return retVal;
     }
