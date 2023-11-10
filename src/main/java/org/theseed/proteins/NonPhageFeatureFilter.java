@@ -6,8 +6,8 @@ package org.theseed.proteins;
 import java.io.IOException;
 
 import org.apache.commons.lang3.StringUtils;
+import org.theseed.basic.ParseFailureException;
 import org.theseed.genome.Feature;
-import org.theseed.utils.ParseFailureException;
 
 /**
  * This feature filters out phage-related roles.

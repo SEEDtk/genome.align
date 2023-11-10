@@ -19,6 +19,7 @@ import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.theseed.basic.ParseFailureException;
 import org.theseed.genome.Contig;
 import org.theseed.genome.Genome;
 import org.theseed.locations.Location;
@@ -28,7 +29,6 @@ import org.theseed.sequence.ExtendedProteinRegion;
 import org.theseed.sequence.FastaOutputStream;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.Sequence;
-import org.theseed.utils.ParseFailureException;
 
 /**
  * This command performs a BLAST to splice the DNA from a gegnome (the source) into the DNA from another genome (the

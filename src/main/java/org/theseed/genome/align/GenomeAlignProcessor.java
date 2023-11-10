@@ -23,6 +23,7 @@ import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.Option;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.theseed.basic.ParseFailureException;
 import org.theseed.genome.Feature;
 import org.theseed.genome.Genome;
 import org.theseed.genome.GenomeDirectory;
@@ -39,7 +40,6 @@ import org.theseed.sequence.MarkedRegionList;
 import org.theseed.sequence.RegionList;
 import org.theseed.sequence.Sequence;
 import org.theseed.sequence.clustal.ClustalPipeline;
-import org.theseed.utils.ParseFailureException;
 
 /**
  * This command will read the genomes in a directory and output the snips.  One or more genomes will be identified as the wild

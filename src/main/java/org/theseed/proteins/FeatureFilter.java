@@ -6,8 +6,8 @@ package org.theseed.proteins;
 import java.io.IOException;
 import java.util.Set;
 
+import org.theseed.basic.ParseFailureException;
 import org.theseed.genome.Feature;
-import org.theseed.utils.ParseFailureException;
 
 /**
  * THis is the base class for feature filters.  These take a feature as input and either pass or fail the feature.
